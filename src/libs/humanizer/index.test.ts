@@ -1175,10 +1175,11 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
-  // Also for a descriptor Ambire amended, which keeps the 1inch handling
+  // Also for a descriptor Ambire amended or wrote, which keeps the 1inch handling
   test.each([
     'registry/1inch/calldata-AggregationRouterV6.json',
-    'ambire/registry/1inch/calldata-AggregationRouterV6.json'
+    'ambire-change/registry/1inch/calldata-AggregationRouterV6.json',
+    'ambire-new/registry/1inch/calldata-AggregationRouterV6.json'
   ])('resolves uint byte slices and uint-encoded token addresses (%s)', async (oneInchPath) => {
     const maker = '0x4446adc0b8136ffc55ddb7a488ba5509ace2a5ef'
     const oneInchAccountOp = {

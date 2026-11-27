@@ -6,7 +6,8 @@ import { isDeepStrictEqual as isEqual } from 'util'
 import { describe, expect, test } from '@jest/globals'
 
 import {
-  ERC7730_AMBIRE_PATH_PREFIX,
+  ERC7730_AMBIRE_CHANGE_PATH_PREFIX,
+  getErc7730RegistryPath,
   SUPPORTED_ERC7730_SCHEMA_FILES
 } from '../../libs/humanizer/erc7730/consts'
 import {
@@ -140,17 +141,13 @@ describe('bundled ERC-7730 registry', () => {
     expect(missingIncludes).toEqual([])
   })
 
-  test('names descriptors by their path in the upstream registry, or as amended copies of one', () => {
+  test("names descriptors by their path in the upstream registry, or as Ambire's with a prefix", () => {
     const otherPaths = [
       ...Object.keys(descriptors),
       ...Object.values(calldataIndex),
       ...getEip712Paths()
     ]
-      .map((path) =>
-        path.startsWith(ERC7730_AMBIRE_PATH_PREFIX)
-          ? path.slice(ERC7730_AMBIRE_PATH_PREFIX.length)
-          : path
-      )
+      .map(getErc7730RegistryPath)
       .filter((path) => !path.startsWith('registry/') && !path.startsWith('ercs/'))
 
     expect([...new Set(otherPaths)]).toEqual([])
@@ -177,10 +174,10 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     expect(unknownHashes).toEqual([])
   })
 
-  /** The path a descriptor is bundled at: its `ambire/` copy when Ambire amended it */
+  /** The path a descriptor is bundled at: its `ambire-change/` copy when Ambire amended it */
   const getBundledPath = (name: string) =>
     name in amendments.amendCalldataDescriptors || name in amendments.amendEip712Descriptors
-      ? `${ERC7730_AMBIRE_PATH_PREFIX}${name}`
+      ? `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`
       : name
 
   test('uses each added descriptor for its key', () => {
@@ -189,9 +186,9 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     })
   })
 
-  test('bundles each amended descriptor as its ambire/ copy only', () => {
+  test('bundles each amended descriptor as its ambire-change/ copy only', () => {
     Object.keys(amendments.amendCalldataDescriptors).forEach((name) => {
-      expect(isOwnKey(descriptors, `${ERC7730_AMBIRE_PATH_PREFIX}${name}`)).toBe(true)
+      expect(isOwnKey(descriptors, `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`)).toBe(true)
       expect(Object.values(calldataIndex)).not.toContain(name)
     })
   })
@@ -205,7 +202,7 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
   test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
     const valueFields = getFields(
       getMergedDescriptor(
-        'ambire/registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json'
+        'ambire-change/registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json'
       )
     ).filter((field) => field.path === '@.value')
 
@@ -216,7 +213,7 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
   })
 
   test('shows the destination network of LiFi by its name', () => {
-    const lifi = getMergedDescriptor('ambire/registry/lifi/calldata-LIFIDiamond.json')
+    const lifi = getMergedDescriptor('ambire-change/registry/lifi/calldata-LIFIDiamond.json')
     const chainIdFields = getFields(lifi).filter((field) =>
       field.path?.endsWith('destinationChainId')
     )
@@ -235,7 +232,7 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     COW_SWAP_CHAIN_IDS.forEach((chainId) => {
       const settlementKey = getRegistryKey(chainId, '0x9008d19f58aabd9ed0d60971565aa8510560ab41')
       expect(calldataIndex[settlementKey]).toBe(
-        'registry/cow-protocol/calldata-GPv2Settlement.json'
+        'ambire-new/registry/cow-protocol/calldata-GPv2Settlement.json'
       )
       expect(Object.keys(eip712Index[settlementKey] ?? {}).sort()).toEqual([
         'Order',
@@ -243,10 +240,12 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
       ])
       expect(
         calldataIndex[getRegistryKey(chainId, '0xba3cb449bd2b4adddbc894d8697f5170800eadec')]
-      ).toBe('ambire/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
+      ).toBe('ambire-change/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
     })
 
-    const ethFlow = getMergedDescriptor('ambire/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
+    const ethFlow = getMergedDescriptor(
+      'ambire-change/registry/cow-protocol/calldata-CoWSwapEthFlow.json'
+    )
     const unwrapFields = ethFlow.display?.formats?.['unwrap(uint256 amount)']?.fields
 
     expect(unwrapFields?.map(({ format }) => format)).toEqual(['amount'])

@@ -42,7 +42,7 @@ import {
   uintToAddress
 } from '../utils'
 import {
-  ERC7730_AMBIRE_PATH_PREFIX,
+  getErc7730RegistryPath,
   MAX_DISPLAYED_NESTED_CALLDATA_DEPTH,
   SAFE_TX_PRIMARY_TYPE
 } from './consts'
@@ -1199,15 +1199,12 @@ const formatToVisualizations = (
 
 /**
  * Whether a descriptor is one of 1inch's, by its path in the registry (`registry/1inch/...`), also
- * when Ambire amended it (`ambire/registry/1inch/...`)
+ * when Ambire amended it (`ambire-change/registry/1inch/...`) or wrote it (`ambire-new/...`)
  */
 const isOneInchDescriptor = (descriptorPath?: string) => {
   if (!descriptorPath) return false
-  const upstreamPath = descriptorPath.startsWith(ERC7730_AMBIRE_PATH_PREFIX)
-    ? descriptorPath.slice(ERC7730_AMBIRE_PATH_PREFIX.length)
-    : descriptorPath
 
-  return upstreamPath.startsWith('registry/1inch/')
+  return getErc7730RegistryPath(descriptorPath).startsWith('registry/1inch/')
 }
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>

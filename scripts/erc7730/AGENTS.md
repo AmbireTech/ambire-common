@@ -13,15 +13,20 @@ change here as a security change.
   it is the only check of what upstream changed.
 - There are three kinds of change:
   - **amend** (`amendCalldataDescriptors`, `amendEip712Descriptors`): changes an upstream
-    descriptor. The result is bundled as `ambire/<descriptor path>`, so it is clear which
+    descriptor. The result is bundled as `ambire-change/<descriptor path>`, so it is clear which
     descriptors Ambire changed. It applies to **every** key that uses the descriptor (adds of it
     too), also keys upstream adds later (the summary lists those as "is also amended for"). Code
-    that checks a descriptor's path must accept the `ambire/` prefix (see `isOneInchDescriptor` in
-    `humanize.ts`).
+    that checks a descriptor's path must remove Ambire's prefixes first, with
+    `getErc7730RegistryPath` (see `isOneInchDescriptor` in `humanize.ts`).
   - **add** (`addCalldataDescriptors`, `addEip712Descriptors`): points a key
     (`eip155:{chainId}:{address}`) at a descriptor, e.g. on a network upstream does not list.
   - **own descriptor** (`descriptors/registry/<project>/`): only when upstream has no descriptor for
-    the contract. Its `deployments` become its keys.
+    the contract. It is bundled as `ambire-new/<path>`, so it never takes the path of an upstream
+    descriptor. Its `deployments` become its keys. It can include upstream descriptors, not other
+    own ones. Change it by editing its file, never with an amend.
+- Every build checks the names of the result (`getNamingProblems` in `amend.ts`): a descriptor
+  without a prefix is upstream's unchanged, `ambire-change/` is an amend, `ambire-new/` is an own
+  descriptor unchanged, and no index key uses an amended upstream descriptor.
 - NEVER edit `registry.json` by hand. Always run the script.
 
 ## 1. Before you write a change: search upstream
@@ -77,9 +82,10 @@ the descriptor, not only the ones in `addresses`.
   keys, then add them.
 - To use an amended descriptor for more contracts, add their keys to `addCalldataDescriptors` (or
   `addEip712Descriptors`) with the **upstream** path, e.g. `'registry/lifi/calldata-LIFIDiamond.json'`.
-  The script points them at the `ambire/` copy, and back at the upstream descriptor once the amend
-  is removed. Never write an `ambire/` path in an add, and never put such a key in the amend's
-  `addresses`: those are only keys upstream already points at the descriptor.
+  The script points them at the `ambire-change/` copy, and back at the upstream descriptor once the
+  amend is removed. An add with an `ambire-change/` or `ambire-new/` path fails the build. Never put
+  such a key in the amend's `addresses`: those are only keys upstream already points at the
+  descriptor.
 - Keys upstream points at an amended descriptor get the copy on their own, also ones it adds later.
   Add them to `addresses` once you audited them, so the update fails if they ever stop using it.
 - Adds have no `reason` field. Put a comment above each group of adds that says why the keys are

@@ -3,7 +3,7 @@ import { promises as fsPromises } from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { ERC7730_AMBIRE_PATH_PREFIX } from '../src/libs/humanizer/erc7730/consts'
+import { ERC7730_AMBIRE_CHANGE_PATH_PREFIX } from '../src/libs/humanizer/erc7730/consts'
 import { applyAmendments } from './erc7730/amend'
 import { amendments } from './erc7730/amendments'
 import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
@@ -315,7 +315,11 @@ const getSummary = ({
     ...formatList('Added descriptors', descriptorChanges.added, format),
     ...formatList('Changed descriptors', descriptorChanges.changed, format),
     ...formatList('Removed descriptors', descriptorChanges.removed, format),
-    ...formatList("Replaced by Ambire's amended copy (`ambire/...`)", replacedDescriptors, format),
+    ...formatList(
+      "Replaced by Ambire's amended copy (`ambire-change/...`)",
+      replacedDescriptors,
+      format
+    ),
     ...formatList("Ambire's changes", notes, format, { asCode: false }),
     ...(calldataChanges.removed.length || eip712Changes.removed.length
       ? [
@@ -343,10 +347,13 @@ const run = async () => {
     const calldataChanges = getChanges(previous?.calldataIndex, calldataIndex)
     const eip712Changes = getChanges(previous?.eip712Index, eip712Index)
     const allDescriptorChanges = getChanges(previous?.descriptors, descriptors)
-    // A registry descriptor Ambire amended is only in its `ambire/` copy now: listed as replaced,
+    // A registry descriptor Ambire amended is only in its `ambire-change/` copy now: listed as replaced,
     // not as removed
     const replacedDescriptors = allDescriptorChanges.removed.filter((name) =>
-      Object.prototype.hasOwnProperty.call(descriptors, `${ERC7730_AMBIRE_PATH_PREFIX}${name}`)
+      Object.prototype.hasOwnProperty.call(
+        descriptors,
+        `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`
+      )
     )
     const descriptorChanges = {
       ...allDescriptorChanges,

@@ -1,7 +1,11 @@
 import { id } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
-import { ERC7730_AMBIRE_PATH_PREFIX } from '../../src/libs/humanizer/erc7730/consts'
+import {
+  ERC7730_AMBIRE_CHANGE_PATH_PREFIX,
+  ERC7730_AMBIRE_NEW_PATH_PREFIX,
+  isAmbireErc7730Path
+} from '../../src/libs/humanizer/erc7730/consts'
 import {
   getIncludes,
   mergeDescriptors,
@@ -26,14 +30,14 @@ import {
 // runtime. Each change says what it expects to find, so that the build fails as soon as an
 // upstream change makes it wrong or useless, instead of shipping it silently:
 //
-// - an amend changes an upstream descriptor (or one of Ambire's own). It checks what it changes
-//   with `expectMatches` and `expectEqual`, and lists contracts that must still use the descriptor.
-//   The result is bundled as `ambire/<descriptor path>`, and every key that used the descriptor
-//   uses it
-// - an add points an index key at a descriptor (an upstream one, e.g. on a network the registry
-//   doesn't list, or one of Ambire's own), and fails once the registry has its own entry there
-// - Ambire's own descriptors are in the upstream format; their `deployments` are added to the
-//   indexes, and fail the same way as an add
+// - an amend changes an upstream descriptor. It checks what it changes with `expectMatches` and
+//   `expectEqual`, and lists contracts that must still use the descriptor. The result is bundled as
+//   `ambire-change/<descriptor path>`, and every key that used the descriptor uses it
+// - an add points an index key at an upstream descriptor, e.g. on a network the registry doesn't
+//   list, and fails once the registry has its own entry there
+// - Ambire's own descriptors are in the upstream format, bundled as `ambire-new/<path>`; their
+//   `deployments` are added to the indexes, and fail the same way as an add. Change them by editing
+//   their files, not with an amend
 
 /** A field of a descriptor's formats, with the signature or the type of its format */
 export type FieldMatch = { field: Erc7730Field; format: string }
@@ -66,14 +70,14 @@ export type Amendments = {
   amendCalldataDescriptors: Record<string, Amendment>
   /**
    * Registry key -> the upstream path of the calldata descriptor to use for it. If that descriptor
-   * is amended, the key gets its `ambire/` copy
+   * is amended, the key gets its `ambire-change/` copy
    */
   addCalldataDescriptors: Record<string, string>
   /** EIP-712 descriptors to change, by their name. Their formats must stay the same */
   amendEip712Descriptors: Record<string, Amendment>
   /**
    * Registry key -> the upstream path of the EIP-712 descriptor to use for its typed messages. If
-   * that descriptor is amended, the key gets its `ambire/` copy
+   * that descriptor is amended, the key gets its `ambire-change/` copy
    */
   addEip712Descriptors: Record<string, string>
 }
@@ -186,6 +190,73 @@ export const findOverlappingKeys = (
 }
 
 /**
+ * What breaks the rules of the bundled names, checked on the result of every build so that a
+ * change of the build code can't break them unnoticed:
+ * - a descriptor without Ambire's prefix is the registry's, unchanged
+ * - `ambire-change/<path>` is the amend of the registry's `<path>`, and every amend has one
+ * - `ambire-new/<path>` is Ambire's own descriptor `<path>`, unchanged
+ * - the indexes point only at bundled descriptors, and never at one that is amended
+ */
+export const getNamingProblems = (
+  registry: BuiltRegistry,
+  sources: {
+    /** The registry's descriptors, as the build read them */
+    upstream: Record<string, unknown>
+    /** Ambire's own descriptors, by their path */
+    own: Record<string, unknown>
+    /** The registry paths of the amended descriptors */
+    amended: ReadonlySet<string>
+  }
+): string[] => {
+  const problems: string[] = []
+  const has = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
+  // Compared as JSON, as they are JSON: copies made with `structuredClone` can have another
+  // prototype (e.g. in tests), which a strict deep comparison would count as a difference
+  const isSame = (one: unknown, other: unknown) => JSON.stringify(one) === JSON.stringify(other)
+
+  Object.entries(registry.descriptors).forEach(([name, descriptor]) => {
+    if (name.startsWith(ERC7730_AMBIRE_CHANGE_PATH_PREFIX)) {
+      const path = name.slice(ERC7730_AMBIRE_CHANGE_PATH_PREFIX.length)
+      if (!sources.amended.has(path))
+        problems.push(`${name} is bundled, but no amend changes ${path}`)
+      return
+    }
+    if (name.startsWith(ERC7730_AMBIRE_NEW_PATH_PREFIX)) {
+      const path = name.slice(ERC7730_AMBIRE_NEW_PATH_PREFIX.length)
+      if (!has(sources.own, path) || !isSame(descriptor, sources.own[path])) {
+        problems.push(`${name} is not Ambire's own descriptor ${path} as it is`)
+      }
+      return
+    }
+    if (!has(sources.upstream, name) || !isSame(descriptor, sources.upstream[name])) {
+      problems.push(`${name} is not the registry's descriptor as it is`)
+    }
+  })
+  sources.amended.forEach((path) => {
+    if (!has(registry.descriptors, `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${path}`)) {
+      problems.push(`The amend of ${path} has no \`${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}\` copy`)
+    }
+  })
+
+  const indexed = [
+    ...Object.entries(registry.calldataIndex).map(([key, path]) => ({ key, path })),
+    ...Object.entries(registry.eip712Index).flatMap(([key, entriesByPrimaryType]) =>
+      Object.values(entriesByPrimaryType).flatMap((entries) =>
+        entries.map(({ path }) => ({ key, path }))
+      )
+    )
+  ]
+  indexed.forEach(({ key, path }) => {
+    if (!has(registry.descriptors, path)) problems.push(`${key} uses ${path}, which is not bundled`)
+    else if (sources.amended.has(path)) {
+      problems.push(`${key} uses ${path}, which is amended, instead of its copy`)
+    }
+  })
+
+  return problems
+}
+
+/**
  * The registry with Ambire's own descriptors, amends and adds applied. Throws a
  * `RegistryBuildError` with every problem found. Also returns notes for the summary: what was
  * changed, and upstream entries that use an amended descriptor without being listed
@@ -201,13 +272,17 @@ export const applyAmendments = (
 
   const problems: string[] = []
   const notes: string[] = []
+  // Copies of what the build starts from, for the final check of the names: the descriptors below
+  // are the same objects, so a change made to one in place would show in them too
+  const upstreamDescriptors = structuredClone(built.descriptors)
+  const ownDescriptorsAsRead = structuredClone(ownDescriptors)
   const descriptors: Record<string, Record<string, unknown>> = { ...built.descriptors }
   const calldataIndex = { ...built.calldataIndex }
   const eip712Index: Record<string, Record<string, Erc7730Eip712IndexEntry[]>> = Object.fromEntries(
     Object.entries(built.eip712Index).map(([key, entries]) => [key, { ...entries }])
   )
   const hasDescriptor = (name: string) => Object.prototype.hasOwnProperty.call(descriptors, name)
-  /** Registry path -> the path of its amended copy (`ambire/<path>`) */
+  /** Registry path -> the path of its amended copy (`ambire-change/<path>`) */
   const amendedPaths = new Map<string, string>()
 
   /** A descriptor merged with everything it includes, or null if anything is missing */
@@ -305,24 +380,47 @@ export const applyAmendments = (
     eip712Index[key] = entries
   }
 
-  // Ambire's own descriptors, indexed by their deployments
-  Object.entries(ownDescriptors).forEach(([name, descriptor]) => {
-    const reference = `Ambire's descriptor ${name}`
-    if (hasDescriptor(name)) {
-      problems.push(`${reference} has the same path as a descriptor of the registry`)
-      return
-    }
+  // Ambire's prefixes tell its descriptors from the registry's, so the registry must not use them
+  const registryPathsWithAmbirePrefix = Object.keys(built.descriptors).filter(isAmbireErc7730Path)
+  if (registryPathsWithAmbirePrefix.length) {
+    problems.push(
+      `The registry has descriptors at paths that start like Ambire's (\`${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}\`, \`${ERC7730_AMBIRE_NEW_PATH_PREFIX}\`): ${registryPathsWithAmbirePrefix.join(
+        ', '
+      )}`
+    )
+  }
+
+  // Ambire's own descriptors, bundled as `ambire-new/<path>` and indexed by their deployments.
+  // The prefix keeps them apart from the registry's descriptors, also ones at the same path
+  /** The path of each of Ambire's own descriptors -> its bundled name */
+  const ownNames = new Map<string, string>()
+  Object.entries(ownDescriptors).forEach(([path, descriptor]) => {
     const problem = getDescriptorProblem(descriptor)
     if (problem || !isPlainObject(descriptor)) {
-      problems.push(`${reference}: ${problem}`)
+      problems.push(`Ambire's descriptor ${path}: ${problem}`)
       return
     }
+    const name = `${ERC7730_AMBIRE_NEW_PATH_PREFIX}${path}`
     descriptors[name] = descriptor
+    ownNames.set(path, name)
   })
-  Object.entries(ownDescriptors).forEach(([name, descriptor]) => {
-    const reference = `Ambire's descriptor ${name}`
-    if (descriptors[name] !== descriptor || !isPlainObject(descriptor)) return
+  ownNames.forEach((name, path) => {
+    const reference = `Ambire's descriptor ${path}`
+    const descriptor = descriptors[name]
+    if (!isPlainObject(descriptor)) return
 
+    // Only the registry's descriptors can be included: an include is never rewritten to the
+    // `ambire-new/` name of another of Ambire's own
+    const ownIncludes = getIncludes(descriptor).filter(
+      (include) =>
+        isAmbireErc7730Path(include) || (ownNames.has(include) && !hasDescriptor(include))
+    )
+    if (ownIncludes.length) {
+      problems.push(
+        `${reference} includes ${ownIncludes.join(', ')}, which are Ambire's. Include only descriptors of the registry`
+      )
+      return
+    }
     const missingIncludes = getIncludes(descriptor).filter((include) => !hasDescriptor(include))
     if (missingIncludes.length) {
       problems.push(`${reference} includes ${missingIncludes.join(', ')}, which are not bundled`)
@@ -371,6 +469,12 @@ export const applyAmendments = (
 
   const amend = (name: string, amendment: Amendment, kind: 'calldata' | 'eip712') => {
     const reference = `The amend of ${name} (${amendment.reason})`
+    if (isAmbireErc7730Path(name)) {
+      problems.push(
+        `${reference}: amend only descriptors of the registry, by their registry path. Edit Ambire's own descriptors in their files`
+      )
+      return
+    }
     const original = flatten(name)
     if (!original) {
       problems.push(`${reference}: the descriptor, or one it includes, is not bundled`)
@@ -475,12 +579,12 @@ export const applyAmendments = (
       return
     }
 
-    // Saved as a copy under `ambire/`, so that it is clear which descriptors are not the registry's
+    // Saved as a copy under `ambire-change/`, so that it is clear which descriptors are not the registry's
     // as they are, and every key that used the registry's descriptor uses the copy
     // One copy per descriptor, as amends are keyed by the descriptor path. To amend the same
     // descriptor differently for different contracts in the future, give each copy a unique path,
     // e.g. with a short hash of its `addresses`, and point only those keys at it
-    const copyName = `${ERC7730_AMBIRE_PATH_PREFIX}${name}`
+    const copyName = `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`
     if (hasDescriptor(copyName)) {
       problems.push(`${reference}: ${copyName} is already in the registry`)
       return
@@ -509,15 +613,27 @@ export const applyAmendments = (
     amend(name, amendment, 'eip712')
   )
 
-  // An add of an amended descriptor uses its amended copy
+  // An add names a descriptor of the registry by its registry path. An add of an amended descriptor
+  // uses its amended copy, and the registry's descriptor again once the amend is removed. Ambire's
+  // own descriptors get their keys from their `deployments` only
+  const getAddProblem = (name: string): string | null => {
+    if (isAmbireErc7730Path(name)) {
+      return "add only descriptors of the registry, by their registry path. Add the keys of an amended descriptor with its registry path, and those of Ambire's own descriptors to their `deployments`"
+    }
+    if (!hasDescriptor(name)) return 'the descriptor is not bundled'
+
+    return null
+  }
   Object.entries(amendments.addCalldataDescriptors).forEach(([key, name]) => {
     const reference = `The add of ${name} for ${key}`
-    if (!hasDescriptor(name)) problems.push(`${reference}: the descriptor is not bundled`)
+    const problem = getAddProblem(name)
+    if (problem) problems.push(`${reference}: ${problem}`)
     else addCalldataKey(key, amendedPaths.get(name) ?? name, reference)
   })
   Object.entries(amendments.addEip712Descriptors).forEach(([key, name]) => {
     const reference = `The add of ${name} for ${key}`
-    if (!hasDescriptor(name)) problems.push(`${reference}: the descriptor is not bundled`)
+    const problem = getAddProblem(name)
+    if (problem) problems.push(`${reference}: ${problem}`)
     else addEip712Key(key, amendedPaths.get(name) ?? name, reference)
   })
 
@@ -539,12 +655,17 @@ export const applyAmendments = (
 
   if (problems.length) throw new RegistryBuildError(problems)
 
-  return {
-    registry: {
-      calldataIndex: sortByKey(calldataIndex),
-      eip712Index: sortByKey(eip712Index),
-      descriptors: sortByKey(descriptors)
-    },
-    notes
+  const registry = {
+    calldataIndex: sortByKey(calldataIndex),
+    eip712Index: sortByKey(eip712Index),
+    descriptors: sortByKey(descriptors)
   }
+  const namingProblems = getNamingProblems(registry, {
+    upstream: upstreamDescriptors,
+    own: ownDescriptorsAsRead,
+    amended: new Set(amendedPaths.keys())
+  })
+  if (namingProblems.length) throw new RegistryBuildError(namingProblems)
+
+  return { registry, notes }
 }

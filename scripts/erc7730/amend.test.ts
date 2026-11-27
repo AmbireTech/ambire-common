@@ -2,7 +2,7 @@ import { id } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { Amendment, Amendments, applyAmendments, NO_AMENDMENTS } from './amend'
+import { Amendment, Amendments, applyAmendments, getNamingProblems, NO_AMENDMENTS } from './amend'
 import { BuiltRegistry, RegistryBuildError } from './build'
 
 const SCHEMA = '../../specs/erc7730-v2.schema.json'
@@ -78,21 +78,21 @@ describe('applyAmendments: amends', () => {
       withAmendments({ amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue } }),
       {}
     )
-    const amended = registry.descriptors['ambire/pool/calldata-Pool.json'] as any
+    const amended = registry.descriptors['ambire-change/pool/calldata-Pool.json'] as any
 
     expect(amended.includes).toBeUndefined()
     expect(amended.display.formats['mint()'].fields[0].visible).toEqual({ ifNotIn: [0] })
     expect(amended.display.formats['burn()'].fields[0].fields[0].visible).toEqual({ ifNotIn: [0] })
     // Every key of the descriptor uses the copy, so neither the registry's descriptor nor the one
     // only it includes is bundled
-    expect(registry.calldataIndex[KEY]).toBe('ambire/pool/calldata-Pool.json')
-    expect(registry.calldataIndex[OTHER_KEY]).toBe('ambire/pool/calldata-Pool.json')
+    expect(registry.calldataIndex[KEY]).toBe('ambire-change/pool/calldata-Pool.json')
+    expect(registry.calldataIndex[OTHER_KEY]).toBe('ambire-change/pool/calldata-Pool.json')
     expect(registry.descriptors['pool/calldata-Pool.json']).toBeUndefined()
     expect(registry.descriptors['pool/common-Pool.json']).toBeUndefined()
     expect(notes).toContain(`pool/calldata-Pool.json is also amended for ${OTHER_KEY}`)
   })
 
-  test('gives an add of an amended descriptor its ambire/ copy', () => {
+  test('gives an add of an amended descriptor its ambire-change/ copy', () => {
     const { registry } = applyAmendments(
       upstreamRegistry(),
       withAmendments({
@@ -102,7 +102,7 @@ describe('applyAmendments: amends', () => {
       {}
     )
 
-    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire/pool/calldata-Pool.json')
+    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire-change/pool/calldata-Pool.json')
   })
 
   test('keeps the registry descriptor while another descriptor includes it', () => {
@@ -334,6 +334,28 @@ describe('applyAmendments: adds', () => {
     ])
   })
 
+  test.each(['ambire-change/pool/calldata-Pool.json', 'ambire-new/dex/calldata-Dex.json'])(
+    'fails for an add of %s, which is not a registry path',
+    (name) => {
+      expect(
+        getProblems(
+          {
+            amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+            addCalldataDescriptors: { [NEW_KEY]: name }
+          },
+          {
+            'dex/calldata-Dex.json': {
+              $schema: SCHEMA,
+              context: { contract: { deployments: [{ chainId: 100, address: KEY.split(':')[2] }] } }
+            }
+          }
+        )
+      ).toEqual([
+        `The add of ${name} for ${NEW_KEY}: add only descriptors of the registry, by their registry path. Add the keys of an amended descriptor with its registry path, and those of Ambire's own descriptors to their \`deployments\``
+      ])
+    }
+  )
+
   test('fails for a descriptor that is not bundled and for keys not written as expected', () => {
     expect(
       getProblems({
@@ -363,8 +385,8 @@ describe('applyAmendments: adds', () => {
     // Merged by primary type with the registry's own entries for the contract
     expect(registry.eip712Index[KEY]).toEqual({
       Permit: [{ path: 'permit/eip712-Permit.json', encodeTypeHashes: ['0x01'] }],
-      Order: [{ path: 'cow/eip712-Settlement.json', encodeTypeHashes: [id(ORDER)] }],
-      Cancel: [{ path: 'cow/eip712-Settlement.json', encodeTypeHashes: [id(CANCEL)] }]
+      Order: [{ path: 'ambire-new/cow/eip712-Settlement.json', encodeTypeHashes: [id(ORDER)] }],
+      Cancel: [{ path: 'ambire-new/cow/eip712-Settlement.json', encodeTypeHashes: [id(CANCEL)] }]
     })
     expect(registry.eip712Index[NEW_KEY]).toEqual({
       Permit: [
@@ -419,8 +441,9 @@ describe("applyAmendments: Ambire's own descriptors", () => {
       'dex/calldata-Dex.json': own()
     })
 
-    expect(registry.calldataIndex[NEW_KEY]).toBe('dex/calldata-Dex.json')
-    expect(registry.descriptors['dex/calldata-Dex.json']).toEqual(own())
+    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire-new/dex/calldata-Dex.json')
+    expect(registry.descriptors['ambire-new/dex/calldata-Dex.json']).toEqual(own())
+    expect(registry.descriptors['dex/calldata-Dex.json']).toBeUndefined()
   })
 
   test('takes a chain id written as a decimal string', () => {
@@ -430,7 +453,7 @@ describe("applyAmendments: Ambire's own descriptors", () => {
       })
     })
 
-    expect(registry.calldataIndex[NEW_KEY]).toBe('dex/calldata-Dex.json')
+    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire-new/dex/calldata-Dex.json')
   })
 
   test.each(['base', '0x38', '056', ' 56', '', 0, -1, 1.5, null])(
@@ -465,16 +488,27 @@ describe("applyAmendments: Ambire's own descriptors", () => {
     })
 
     expect(getProblems({}, { 'dex/calldata-Dex.json': deployedOnKey })).toEqual([
-      `Ambire's descriptor dex/calldata-Dex.json: the registry already has pool/calldata-Pool.json for ${KEY}. Remove ${KEY} from Ambire's changes, or amend pool/calldata-Pool.json instead (only in dex/calldata-Dex.json: swap(); only in pool/calldata-Pool.json: burn(), mint())`
+      `Ambire's descriptor dex/calldata-Dex.json: the registry already has pool/calldata-Pool.json for ${KEY}. Remove ${KEY} from Ambire's changes, or amend pool/calldata-Pool.json instead (only in ambire-new/dex/calldata-Dex.json: swap(); only in pool/calldata-Pool.json: burn(), mint())`
     ])
   })
 
-  test('fails for a name the registry already has, and for unsupported or unused ones', () => {
+  test('keeps one at the path of a registry descriptor apart from it', () => {
+    const { registry } = applyAmendments(upstreamRegistry(), NO_AMENDMENTS, {
+      'pool/calldata-Pool.json': own()
+    })
+
+    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire-new/pool/calldata-Pool.json')
+    expect(registry.calldataIndex[KEY]).toBe('pool/calldata-Pool.json')
+    expect(registry.descriptors['pool/calldata-Pool.json']).toEqual(
+      upstreamRegistry().descriptors['pool/calldata-Pool.json']
+    )
+  })
+
+  test('fails for unsupported or unused ones', () => {
     expect(
       getProblems(
         {},
         {
-          'pool/calldata-Pool.json': own(),
           'dex/calldata-V3.json': own({
             $schema: 'erc7730-v3.schema.json',
             context: { contract: { deployments: [{ chainId: 100, address: KEY.split(':')[2] }] } }
@@ -483,7 +517,6 @@ describe("applyAmendments: Ambire's own descriptors", () => {
         }
       )
     ).toEqual([
-      "Ambire's descriptor pool/calldata-Pool.json has the same path as a descriptor of the registry",
       "Ambire's descriptor dex/calldata-V3.json: its version of ERC-7730 is not supported: erc7730-v3.schema.json",
       "Ambire's descriptor dex/calldata-Unused.json has no `context.contract.deployments` or `context.eip712.deployments`"
     ])
@@ -494,6 +527,58 @@ describe("applyAmendments: Ambire's own descriptors", () => {
       getProblems({}, { 'dex/calldata-Dex.json': own({ includes: 'dex/common.json' }) })
     ).toEqual([
       "Ambire's descriptor dex/calldata-Dex.json includes dex/common.json, which are not bundled"
+    ])
+  })
+
+  test('can include a descriptor of the registry', () => {
+    const { registry } = applyAmendments(upstreamRegistry(), NO_AMENDMENTS, {
+      'dex/calldata-Dex.json': own({ includes: 'pool/common-Pool.json' })
+    })
+
+    expect(registry.descriptors['ambire-new/dex/calldata-Dex.json']?.includes).toBe(
+      'pool/common-Pool.json'
+    )
+  })
+
+  test("fails when they include another of Ambire's own descriptors", () => {
+    const common = { $schema: SCHEMA, metadata: { owner: 'Dex' } }
+
+    expect(
+      getProblems(
+        {},
+        {
+          'dex/calldata-Dex.json': own({ includes: ['dex/common.json'] }),
+          'dex/calldata-Other.json': own({
+            context: { contract: { deployments: [{ chainId: 100, address: KEY.split(':')[2] }] } },
+            includes: 'ambire-new/dex/common.json'
+          }),
+          'dex/common.json': common
+        }
+      )
+    ).toEqual([
+      "Ambire's descriptor dex/calldata-Dex.json includes dex/common.json, which are Ambire's. Include only descriptors of the registry",
+      "Ambire's descriptor dex/calldata-Other.json includes ambire-new/dex/common.json, which are Ambire's. Include only descriptors of the registry",
+      "Ambire's descriptor dex/common.json has no `context.contract.deployments` or `context.eip712.deployments`"
+    ])
+  })
+
+  test('fails for an amend of one', () => {
+    expect(
+      getProblems(
+        { amendCalldataDescriptors: { 'ambire-new/dex/calldata-Dex.json': fixValue } },
+        { 'dex/calldata-Dex.json': own() }
+      )
+    ).toEqual([
+      "The amend of ambire-new/dex/calldata-Dex.json (test): amend only descriptors of the registry, by their registry path. Edit Ambire's own descriptors in their files"
+    ])
+  })
+
+  test("fails when the registry has a path that starts like Ambire's", () => {
+    const registry = upstreamRegistry()
+    registry.descriptors['ambire-new/x.json'] = { $schema: SCHEMA }
+
+    expect(getProblems({}, {}, registry)).toEqual([
+      "The registry has descriptors at paths that start like Ambire's (`ambire-change/`, `ambire-new/`): ambire-new/x.json"
     ])
   })
 })
@@ -557,5 +642,104 @@ describe("applyAmendments: keys in more than one of Ambire's changes", () => {
         { 'dex/eip712-Dex.json': ownOn(NEW_KEY, 'eip712') }
       )
     ).toEqual([])
+  })
+})
+
+describe('getNamingProblems', () => {
+  const OWN = { $schema: SCHEMA, metadata: { owner: 'Dex' } }
+  const sources = () => ({
+    upstream: upstreamRegistry().descriptors,
+    own: { 'dex/calldata-Dex.json': OWN },
+    amended: new Set(['pool/calldata-Pool.json'])
+  })
+  const bundled = (): BuiltRegistry => {
+    const { descriptors } = upstreamRegistry()
+    return {
+      calldataIndex: { [KEY]: 'ambire-change/pool/calldata-Pool.json' },
+      eip712Index: { [KEY]: { Permit: [{ path: 'permit/eip712-Permit.json' }] } },
+      descriptors: {
+        'ambire-change/pool/calldata-Pool.json': { $schema: SCHEMA },
+        'ambire-new/dex/calldata-Dex.json': OWN,
+        'pool/common-Pool.json': descriptors['pool/common-Pool.json']!,
+        'permit/eip712-Permit.json': descriptors['permit/eip712-Permit.json']!
+      }
+    }
+  }
+
+  test('passes for a registry that keeps the rules', () => {
+    expect(getNamingProblems(bundled(), sources())).toEqual([])
+  })
+
+  test('passes for every build of applyAmendments', () => {
+    expect(() =>
+      applyAmendments(
+        upstreamRegistry(),
+        withAmendments({
+          amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+          addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Pool.json' }
+        }),
+        {
+          'dex/calldata-Dex.json': {
+            ...OWN,
+            context: { contract: { deployments: [{ chainId: 100, address: KEY.split(':')[2] }] } }
+          }
+        }
+      )
+    ).not.toThrow()
+  })
+
+  test("fails for a registry descriptor that changed, or that isn't the registry's", () => {
+    const registry = bundled()
+    ;(registry.descriptors['pool/common-Pool.json'] as any).metadata = { owner: 'Changed' }
+    registry.descriptors['pool/calldata-Unknown.json'] = { $schema: SCHEMA }
+
+    expect(getNamingProblems(registry, sources())).toEqual([
+      "pool/common-Pool.json is not the registry's descriptor as it is",
+      "pool/calldata-Unknown.json is not the registry's descriptor as it is"
+    ])
+  })
+
+  test("fails for an own descriptor that changed, or that isn't Ambire's", () => {
+    const registry = bundled()
+    registry.descriptors['ambire-new/dex/calldata-Dex.json'] = { ...OWN, metadata: {} }
+    registry.descriptors['ambire-new/dex/calldata-Other.json'] = OWN
+
+    expect(getNamingProblems(registry, sources())).toEqual([
+      "ambire-new/dex/calldata-Dex.json is not Ambire's own descriptor dex/calldata-Dex.json as it is",
+      "ambire-new/dex/calldata-Other.json is not Ambire's own descriptor dex/calldata-Other.json as it is"
+    ])
+  })
+
+  test('fails for a copy with no amend, and for an amend with no copy', () => {
+    const registry = bundled()
+    registry.descriptors['ambire-change/permit/eip712-Permit.json'] = { $schema: SCHEMA }
+
+    expect(
+      getNamingProblems(registry, {
+        ...sources(),
+        amended: new Set(['pool/calldata-Pool.json', 'pool/calldata-Other.json'])
+      })
+    ).toEqual([
+      'ambire-change/permit/eip712-Permit.json is bundled, but no amend changes permit/eip712-Permit.json',
+      'The amend of pool/calldata-Other.json has no `ambire-change/` copy'
+    ])
+  })
+
+  test('fails for an index entry that uses an amended or a missing descriptor', () => {
+    const registry = bundled()
+    registry.calldataIndex[OTHER_KEY] = 'pool/calldata-Pool.json'
+    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Gone.json' }] }
+
+    expect(getNamingProblems(registry, sources())).toEqual([
+      `${OTHER_KEY} uses pool/calldata-Pool.json, which is not bundled`,
+      `${NEW_KEY} uses permit/eip712-Gone.json, which is not bundled`
+    ])
+
+    registry.descriptors['pool/calldata-Pool.json'] =
+      upstreamRegistry().descriptors['pool/calldata-Pool.json']!
+    expect(getNamingProblems(registry, sources())).toEqual([
+      `${OTHER_KEY} uses pool/calldata-Pool.json, which is amended, instead of its copy`,
+      `${NEW_KEY} uses permit/eip712-Gone.json, which is not bundled`
+    ])
   })
 })
