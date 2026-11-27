@@ -509,7 +509,7 @@ describe('RequestsController ', () => {
       await wait(0)
       await controller.requestWindow.openWindowPromise
 
-      expect(controller.pendingUserRequests).toEqual([{ isClosed: false }])
+      expect(controller.hasPendingUserRequest).toBe(true)
       expect(updateAccountStateSpy).toHaveBeenCalledWith(
         '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         'pending',
@@ -522,7 +522,7 @@ describe('RequestsController ', () => {
       releaseStateFetch()
       await build
 
-      expect(controller.pendingUserRequests).toEqual([])
+      expect(controller.hasPendingUserRequest).toBe(false)
       expect(controller.currentUserRequest?.kind).toBe('calls')
       // The request shows in the loader's window, which never closed
       expect(controller.requestWindow.windowProps?.id).toBe(loaderWindow?.id)
@@ -549,7 +549,7 @@ describe('RequestsController ', () => {
       ).rejects.toThrow('RPC is down')
       expect(closeRequestWindowSpy).toHaveBeenCalled()
 
-      expect(controller.pendingUserRequests).toEqual([])
+      expect(controller.hasPendingUserRequest).toBe(false)
       expect(controller.currentUserRequest).toBe(null)
       expect(controller.requestWindow.windowProps).toBe(null)
     })
@@ -576,7 +576,7 @@ describe('RequestsController ', () => {
         })
       ).rejects.toThrow("isn't in your wallet")
       expect(openRequestWindowSpy).not.toHaveBeenCalled()
-      expect(controller.pendingUserRequests).toEqual([])
+      expect(controller.hasPendingUserRequest).toBe(false)
     })
 
     test('still opens an in-wallet transaction while a closed loader is built', async () => {
@@ -639,17 +639,19 @@ describe('RequestsController ', () => {
       })
       await wait(0)
       await controller.requestWindow.openWindowPromise
-      expect(controller.pendingUserRequests).toEqual([{ isClosed: false }])
+      expect(controller.hasPendingUserRequest).toBe(true)
 
       await controller.closeRequestWindow()
       expect(controller.requestWindow.windowProps).toBe(null)
+      // The closed loader no longer counts, so a new request window wouldn't show it
+      expect(controller.hasPendingUserRequest).toBe(false)
       const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
       const createNotification = jest.spyOn(uiCtrl.notification, 'create')
 
       releaseStateFetch()
       await build
 
-      expect(controller.pendingUserRequests).toEqual([])
+      expect(controller.hasPendingUserRequest).toBe(false)
       expect(controller.userRequests.map(({ kind }) => kind)).toEqual(['calls'])
       expect(controller.currentUserRequest).toBe(null)
       expect(controller.requestWindow.windowProps).toBe(null)

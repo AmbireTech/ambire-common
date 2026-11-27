@@ -329,7 +329,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * transaction waits for the account state). The request window shows a loader for them. If the
    * user closes it meanwhile, the request is handled as closed once it is built.
    */
-  pendingUserRequests: PendingUserRequest[] = []
+  #pendingUserRequests: PendingUserRequest[] = []
+
+  /** Whether the request window shows a loader, as an app's transaction is still being built */
+  get hasPendingUserRequest() {
+    return this.#pendingUserRequests.some((p) => !p.isClosed)
+  }
 
   /**
    * Set only while the wallet is closing a request window itself. Closing it fires
@@ -1108,7 +1113,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   /** Drops a request that is no longer pending. The loader window closes if nothing opened. */
   async #removePendingUserRequest(pending: PendingUserRequest) {
-    this.pendingUserRequests = this.pendingUserRequests.filter((p) => p !== pending)
+    this.#pendingUserRequests = this.#pendingUserRequests.filter((p) => p !== pending)
     this.emitUpdate()
     if (!this.currentUserRequest) await this.#setCurrentUserRequest(null)
   }
@@ -1151,7 +1156,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (
       this.#autoTriggerUserRequests.length ||
       this.#userRequestsBeingAdded ||
-      this.pendingUserRequests.some((p) => !p.isClosed)
+      this.hasPendingUserRequest
     )
       return
 
@@ -1370,7 +1375,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
       if (isUserInitiatedClose) {
-        this.pendingUserRequests.forEach((p) => {
+        this.#pendingUserRequests.forEach((p) => {
           p.isClosed = true
         })
       }
@@ -3901,7 +3906,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let pending: PendingUserRequest | undefined
     if (params.dappPromises?.length) {
       pending = { isClosed: false }
-      this.pendingUserRequests.push(pending)
+      this.#pendingUserRequests.push(pending)
       this.emitUpdate()
       void this.openRequestWindow({
         baseWindowId: addOptions.baseWindowId,
@@ -4573,6 +4578,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest,
+      hasPendingUserRequest: this.hasPendingUserRequest,
       currentRequestDappVerificationBanners: this.currentRequestDappVerificationBanners,
       currentRequestRejectOptions: this.currentRequestRejectOptions
     }
