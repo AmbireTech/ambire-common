@@ -36,6 +36,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
+import { PrivacyPoolsController } from '../privacyPools/privacyPools'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SafeController } from '../safe/safe'
@@ -248,6 +249,11 @@ const contractInfoCtrl = new ContractInfoController({
   ui: uiCtrl
 })
 
+const tokenPricesCtrl = new TokenPricesController({
+  fetch,
+  isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
+})
+
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
   fetch,
@@ -260,11 +266,23 @@ const portfolioCtrl = new PortfolioController(
   bannerCtrl,
   featureFlagsCtrl,
   uiCtrl,
-  new TokenPricesController({
-    fetch,
-    isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
-  })
+  tokenPricesCtrl
 )
+
+const privacyPoolsCtrl = new PrivacyPoolsController({
+  keystore,
+  featureFlags: featureFlagsCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl,
+  selectedAccount: selectedAccountCtrl,
+  storage: storageCtrl,
+  ui: uiCtrl,
+  fetch,
+  circuitsBaseUrl: '',
+  onAccountsRemoved: () => Promise.resolve(),
+  getPendingAccountOps: () => [],
+  tokenPrices: tokenPricesCtrl
+})
 
 const safe = new SafeController({
   networks: networksCtrl,
@@ -411,7 +429,8 @@ const transferCtrl = new TransferController(
   uiCtrl,
   erc7730Ctrl,
   contractInfoCtrl,
-  'browser-webkit'
+  'browser-webkit',
+  privacyPoolsCtrl
 )
 
 requestsCtrl = new RequestsController({
