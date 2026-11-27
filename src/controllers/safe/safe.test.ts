@@ -862,7 +862,11 @@ describe('SafeController pending counts', () => {
       isSafeApiEnabled = false
 
       await controller.updateOtherSafesPendingCounts(SAFE_A)
+      await controller.updateOtherSafesPendingCounts(undefined, { isBackgroundCheck: true })
       await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
+      await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }], {
+        isBackgroundCheck: true
+      })
       await controller.fetchExecuted(SAFE_A as Hex, [{ chainId: 1n, minNonce: 0 }])
       await controller.getMessagesByHash(SAFE_A as Hex, [
         { chainId: 1n, threshold: 1, messageHash: '0x01' }
@@ -1243,6 +1247,58 @@ describe('SafeController pending counts', () => {
 
       expect(accounts.getOrFetchAccountStates).not.toHaveBeenCalled()
       expect(fetchAllPending).not.toHaveBeenCalled()
+    })
+
+    it('lets a background check fetch the pending counts of all Safes, the selected one included', async () => {
+      const { controller, keystoreState } = createPendingCountsController({
+        accountStates: {
+          [SAFE_A]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } },
+          [SAFE_B]: { '10': { isDeployed: true, threshold: 1, nonce: 3n } }
+        }
+      })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      await controller.updateOtherSafesPendingCounts(undefined, { isBackgroundCheck: true })
+
+      expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
+        [[{ chainId: 1n, threshold: 1, nonce: 0n }], SAFE_A],
+        [[{ chainId: 10n, threshold: 1, nonce: 3n }], SAFE_B]
+      ])
+      expect(controller.pendingCountBySafe).toEqual({
+        [SAFE_A]: { '1': 1 },
+        [SAFE_B]: { '10': 1 }
+      })
+    })
+
+    it('runs a background check after a regular update that stopped because of the lock', async () => {
+      const { controller, keystoreState } = createPendingCountsController({
+        accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
+      })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      const regularUpdate = controller.updateOtherSafesPendingCounts(SAFE_A)
+      const backgroundCheck = controller.updateOtherSafesPendingCounts(SAFE_A, {
+        isBackgroundCheck: true
+      })
+      await Promise.all([regularUpdate, backgroundCheck])
+
+      expect(fetchAllPending).toHaveBeenCalledTimes(1)
+      expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 1 })
+    })
+
+    it('lets a background check fetch the pending txns of a Safe to update its counts', async () => {
+      const { controller, keystoreState } = createPendingCountsController({ accountStates: {} })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }], {
+        isBackgroundCheck: true
+      })
+
+      expect(fetchAllPending).toHaveBeenCalledTimes(1)
+      expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 1 })
     })
 
     it('stops before the next Safe request when it gets locked midway', async () => {

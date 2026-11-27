@@ -167,6 +167,15 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#keystore.isUnlocked && this.#isSafeApiEnabled
   }
 
+  /**
+   * Like `#canSyncWithSafeApi`, except that a background check may also ask while the wallet
+   * is locked: the app starts locked when the system wakes it to look for new things to sign.
+   * Such a check only refreshes the pending counts, which become requests only once unlocked.
+   */
+  #canSyncWithSafeApiFor(isBackgroundCheck: boolean) {
+    return isBackgroundCheck ? this.#isSafeApiEnabled : this.#canSyncWithSafeApi
+  }
+
   async #load() {
     await this.#accounts.initialLoadPromise
     this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
@@ -593,14 +602,16 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   /**
    * Fetches the pending txns and messages of a Safe and updates its pending counts.
-   * Returns null without asking the Safe API while the wallet is locked.
+   * Returns null without asking the Safe API while the wallet is locked, unless it is
+   * a background check (see `#canSyncWithSafeApiFor`).
    */
   async fetchPending(
     safeAddr: Hex,
-    networks: SafePendingFetchNetwork[]
+    networks: SafePendingFetchNetwork[],
+    { isBackgroundCheck = false }: { isBackgroundCheck?: boolean } = {}
   ): Promise<SafeResults | null> {
     await this.#featureFlags.initialLoadPromise
-    if (!this.#canSyncWithSafeApi) return null
+    if (!this.#canSyncWithSafeApiFor(isBackgroundCheck)) return null
 
     this.#pendingFetchedAt[safeAddr] = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
@@ -634,13 +645,24 @@ export class SafeController extends EventEmitter implements ISafeController {
    * skipped while its counts are younger than `FETCH_OTHER_SAFES_PENDING`, and until at least
    * one of its owners is imported, as without one the user cannot sign what is pending. The
    * counts of a Safe whose owners were all removed are cleared.
+   *
+   * With `isBackgroundCheck` it runs while the wallet is locked too (see
+   * `#canSyncWithSafeApiFor`). Without a selected account it covers all of the user's Safes.
    */
-  async updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
-    if (this.#updateOtherSafesPendingCountsPromise)
-      return this.#updateOtherSafesPendingCountsPromise
+  async updateOtherSafesPendingCounts(
+    selectedAccountAddr?: string,
+    { isBackgroundCheck = false }: { isBackgroundCheck?: boolean } = {}
+  ) {
+    if (this.#updateOtherSafesPendingCountsPromise) {
+      if (!isBackgroundCheck) return this.#updateOtherSafesPendingCountsPromise
+      // A regular update stops while the wallet is locked, so a background check runs after
+      // it instead of taking its result. The Safes it has just fetched are skipped as fresh.
+      await this.#updateOtherSafesPendingCountsPromise
+    }
 
     this.#updateOtherSafesPendingCountsPromise = this.#updateOtherSafesPendingCounts(
-      selectedAccountAddr
+      selectedAccountAddr,
+      isBackgroundCheck
     ).finally(() => {
       this.#updateOtherSafesPendingCountsPromise = undefined
     })
@@ -693,9 +715,12 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#accounts.accountStates[safeAddr]
   }
 
-  async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
+  async #updateOtherSafesPendingCounts(
+    selectedAccountAddr: string | undefined,
+    isBackgroundCheck: boolean
+  ) {
     await this.#featureFlags.initialLoadPromise
-    if (!this.#canSyncWithSafeApi) return
+    if (!this.#canSyncWithSafeApiFor(isBackgroundCheck)) return
 
     this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
 
@@ -723,18 +748,18 @@ export class SafeController extends EventEmitter implements ISafeController {
         isFirstRequest = false
 
         // the wallet may get locked (or opted out) while the Safes are updated one by one
-        if (!this.#canSyncWithSafeApi) return
+        if (!this.#canSyncWithSafeApiFor(isBackgroundCheck)) return
 
         const { threshold, nonce } = chainAccountState
-        await this.fetchPending(safe.addr as Hex, [{ chainId, threshold, nonce }]).catch(
-          (error) => {
-            this.emitError({
-              level: 'silent',
-              message: 'Failed to fetch the pending transactions of a Safe account',
-              error
-            })
-          }
-        )
+        await this.fetchPending(safe.addr as Hex, [{ chainId, threshold, nonce }], {
+          isBackgroundCheck
+        }).catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to fetch the pending transactions of a Safe account',
+            error
+          })
+        })
       }
     }
   }
