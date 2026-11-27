@@ -5,6 +5,7 @@ import {
 import {
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
   SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
@@ -122,11 +123,11 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#updatePortfolioInterval = new RecurringTimeout(
       this.#updatePortfolio.bind(this),
-      ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
 
-    // The account timers run only while the wallet is in use, see #isWalletInUse
+    // The account timers depend on the lock state and the open windows, see #syncAccountTimers
     this.#main.ui.uiEvent.on('addView', () => this.#syncAccountTimers())
     this.#main.ui.uiEvent.on('removeView', () => this.#syncAccountTimers())
     this.#main.keystore.onUpdate(() => {
@@ -269,37 +270,62 @@ export class ContinuousUpdatesController extends EventEmitter {
   }
 
   /**
-   * Whether the account timers may run: the wallet is unlocked and a wallet window is open. A
-   * request from a connected app opens a window, so it counts too.
+   * Whether the account state timers may run: the wallet is unlocked and a wallet window is open.
+   * A request from a connected app opens a window, so it counts too.
    */
   #isWalletInUse() {
     return this.#main.keystore.isUnlocked && this.#isUiActive()
   }
 
+  /** How often the portfolio updates, which is more often while a wallet window is open. */
+  #getPortfolioUpdateInterval() {
+    return this.#isUiActive()
+      ? ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+      : INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+  }
+
   /**
-   * Starts the portfolio and account state timers while the wallet is in use, and stops them,
-   * with the re-fetch of failed networks, otherwise. Starting them doesn't fetch at once, as
-   * opening a window refreshes the data that is old.
+   * Runs the portfolio timer while the wallet is unlocked, at a shorter interval while a window
+   * is open, and the account state timers, with the re-fetch of failed networks, only while the
+   * wallet is in use. Starting or switching a timer doesn't fetch at once, as opening a window
+   * refreshes the data that is old.
    */
   #syncAccountTimers() {
+    this.#syncPortfolioTimer()
+
     if (!this.#isWalletInUse()) {
-      this.#updatePortfolioInterval.stop()
       this.#accountStateLatestInterval.stop()
       this.#fastAccountStateReFetchTimeout.stop()
       return
     }
 
-    this.#updatePortfolioInterval.start()
     this.#accountStateLatestInterval.start()
     this.#fastAccountStateReFetchTimeout.start()
   }
 
+  #syncPortfolioTimer() {
+    if (!this.#main.keystore.isUnlocked) {
+      this.#updatePortfolioInterval.stop()
+      return
+    }
+
+    const timeout = this.#getPortfolioUpdateInterval()
+    const isTimeoutChanged = this.#updatePortfolioInterval.currentTimeout !== timeout
+
+    if (this.#updatePortfolioInterval.running && isTimeoutChanged) {
+      this.#updatePortfolioInterval.restart({ timeout })
+      return
+    }
+
+    this.#updatePortfolioInterval.start({ timeout })
+  }
+
   /** Restarts the portfolio and account state timers after an account switch, if they may run. */
   restartAccountTimers() {
-    if (!this.#isWalletInUse()) return
-
-    this.#updatePortfolioInterval.restart()
-    this.#accountStateLatestInterval.restart()
+    if (this.#main.keystore.isUnlocked) {
+      this.#updatePortfolioInterval.restart({ timeout: this.#getPortfolioUpdateInterval() })
+    }
+    if (this.#isWalletInUse()) this.#accountStateLatestInterval.restart()
   }
 
   #restartAccountStateTimer() {
@@ -308,8 +334,8 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updatePortfolio() {
     await this.initialLoadPromise
-    // Stops the timers when they were restarted while the wallet is not in use
-    if (!this.#isWalletInUse()) {
+    // Stops the timer when it was restarted while the wallet is locked
+    if (!this.#main.keystore.isUnlocked) {
       this.#syncAccountTimers()
       return
     }
@@ -319,8 +345,9 @@ export class ContinuousUpdatesController extends EventEmitter {
         maxDataAgeMs: 60 * 1000,
         maxDataAgeMsUnused: 60 * 60 * 1000
       }),
-      // Does nothing unless a Privacy Pools account is selected and the wallet is unlocked
-      this.#main.privacyPools.syncInBackground()
+      // Only while a view is open, as a sync is much heavier than a portfolio update. Does nothing
+      // unless a Privacy Pools account is selected and the wallet is unlocked.
+      this.#isUiActive() ? this.#main.privacyPools.syncInBackground() : undefined
     ])
   }
 

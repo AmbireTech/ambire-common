@@ -6,6 +6,7 @@ import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import {
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
+  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
   SAFE_RESOLVE_INACTIVE_INTERVAL,
   SAFE_RESOLVE_MAX_INACTIVE_INTERVAL,
@@ -175,42 +176,74 @@ describe('ContinuousUpdatesController intervals', () => {
     restoreFunc()
   })
 
-  test('runs the account timers only while the wallet is unlocked and a window is open', async () => {
+  test('runs the portfolio timer while the wallet is unlocked, more often while a window is open', async () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
-    const { updatePortfolioInterval, accountStateLatestInterval } = mainCtrl.continuousUpdates!
+    const { updatePortfolioInterval } = mainCtrl.continuousUpdates!
 
-    // Locked: a window that opens refreshes its data, but the timers stay off
-    await openView(mainCtrl)
+    // Locked: nothing runs, with or without a window
     expect(updatePortfolioInterval.running).toBe(false)
-    expect(accountStateLatestInterval.running).toBe(false)
 
     setIsUnlocked(mainCtrl, true)
     await jest.advanceTimersByTimeAsync(0)
     expect(updatePortfolioInterval.running).toBe(true)
-    expect(updatePortfolioInterval.currentTimeout).toBe(ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL)
-    expect(accountStateLatestInterval.running).toBe(true)
+    expect(updatePortfolioInterval.currentTimeout).toBe(
+      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+    )
 
     const executionsCount = updatePortfolioInterval.fnExecutionsCount
-    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    await jest.advanceTimersByTimeAsync(INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL - 1000)
+    expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount)
+    await jest.advanceTimersByTimeAsync(2000)
     expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount + 1)
+    expect(mainCtrl.updateSelectedAccountPortfolio).toHaveBeenCalled()
 
-    // Unlocked, but nobody uses the wallet
-    await closeView(mainCtrl)
-    expect(updatePortfolioInterval.running).toBe(false)
-    expect(accountStateLatestInterval.running).toBe(false)
-
+    // Opening a window switches the interval without an extra update at once
     await openView(mainCtrl)
     expect(updatePortfolioInterval.running).toBe(true)
+    expect(updatePortfolioInterval.currentTimeout).toBe(ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL)
+    expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount + 1)
+    await jest.advanceTimersByTimeAsync(ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL + 1000)
+    expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount + 2)
+
+    await closeView(mainCtrl)
+    expect(updatePortfolioInterval.running).toBe(true)
+    expect(updatePortfolioInterval.currentTimeout).toBe(
+      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+    )
+
     setIsUnlocked(mainCtrl, false)
     expect(updatePortfolioInterval.running).toBe(false)
-    expect(accountStateLatestInterval.running).toBe(false)
 
     // Nothing runs later either
     const lockedExecutionsCount = updatePortfolioInterval.fnExecutionsCount
-    await jest.advanceTimersByTimeAsync(ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL * 2)
+    await jest.advanceTimersByTimeAsync(INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL * 2)
     expect(updatePortfolioInterval.fnExecutionsCount).toBe(lockedExecutionsCount)
+  })
+
+  test('runs the account state timer only while the wallet is unlocked and a window is open', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+    await waitForAccountStatesInitialLoad(mainCtrl)
+    const { accountStateLatestInterval } = mainCtrl.continuousUpdates!
+
+    // Locked: a window that opens refreshes its data, but the timer stays off
+    await openView(mainCtrl)
+    expect(accountStateLatestInterval.running).toBe(false)
+
+    setIsUnlocked(mainCtrl, true)
+    await jest.advanceTimersByTimeAsync(0)
+    expect(accountStateLatestInterval.running).toBe(true)
+
+    // Unlocked, but nobody uses the wallet
+    await closeView(mainCtrl)
+    expect(accountStateLatestInterval.running).toBe(false)
+
+    await openView(mainCtrl)
+    expect(accountStateLatestInterval.running).toBe(true)
+    setIsUnlocked(mainCtrl, false)
+    expect(accountStateLatestInterval.running).toBe(false)
   })
 
   test('should run accountsOpsStatusesInterval', async () => {
@@ -303,7 +336,7 @@ describe('ContinuousUpdatesController intervals', () => {
     })
   })
 
-  test('should sync the Privacy Pools accounts with the portfolio update', async () => {
+  test('should sync the Privacy Pools accounts with the portfolio update while a view is open', async () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
@@ -312,6 +345,10 @@ describe('ContinuousUpdatesController intervals', () => {
       .spyOn(mainCtrl.privacyPools, 'syncInBackground')
       .mockResolvedValue(undefined)
     setIsUnlocked(mainCtrl, true)
+
+    // Only while a view is open
+    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    expect(syncInBackground).not.toHaveBeenCalled()
 
     await openView(mainCtrl)
     await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
