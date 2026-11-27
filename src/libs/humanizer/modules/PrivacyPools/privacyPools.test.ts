@@ -2,9 +2,15 @@ import { ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
+import {
+  getPrivacyPoolsAsset,
+  getPrivacyPoolsChainConfig,
+  PRIVACY_POOLS_NATIVE_ASSET_ADDRESS
+} from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
+import { humanizeAccountOp } from '../..'
+import { humanizeCallWithModules } from '../../callModules'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import {
@@ -12,6 +18,7 @@ import {
   getAddressVisualization,
   getErc7730Visualization,
   getLabel,
+  getText,
   getToken
 } from '../../utils'
 import { humanizePrivacyPoolsWithdrawal, privacyPoolsModule } from './privacyPoolsModule'
@@ -56,6 +63,141 @@ describe('Privacy Pools humanizer', () => {
     ]
 
     compareHumanizerVisualizations(humanize(calls), expectedVisualizations)
+  })
+
+  describe('with all the humanizer modules', () => {
+    const fullAccountOp = {
+      id: 'test',
+      accountAddr: RECIPIENT,
+      chainId: 1n,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      nonce: null,
+      calls: [],
+      gasLimit: null,
+      signature: null,
+      gasFeePayment: null
+    }
+
+    test('shows the ETH of a native deposit once, not again as a separate send', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        })
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('names the account each deposit of a batch goes to, when the wallet knows it', () => {
+      const deposits = [1n, 2n, 3n].map((precommitment) => ({
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment
+        })
+      }))
+      const op = { ...fullAccountOp, calls: deposits }
+
+      const humanized = humanizeAccountOp(op, {
+        privacyPoolsAccountNames: { 0: 'Savings', 1: 'Salary' }
+      })
+
+      compareHumanizerVisualizations(humanized, [
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Savings'), isBold: true }
+        ],
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Salary'), isBold: true }
+        ],
+        // No name known, e.g. a deposit built before a restart
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to a Privacy Pools account')
+        ]
+      ])
+      // Kept off the transaction itself, which is stored, and off the humanized calls
+      expect(op.calls.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
+      expect(humanized.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
+    })
+
+    test('still shows ETH sent along with a token deposit', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: USDC,
+          amount: 5_000_000n,
+          precommitment: 42n
+        }),
+        value: 10n ** 16n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(USDC, 5_000_000n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('shows the ETH a call sends when it differs from the deposit amount', () => {
+      // The token deposit with the address that stands for ETH, so its amount comes from the
+      // calldata, not from the ETH the call sends
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: PRIVACY_POOLS_NATIVE_ASSET_ADDRESS,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        }),
+        value: 10n ** 19n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 19n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
   })
 
   test('leaves other calls alone, including a deposit on a network without Privacy Pools', () => {

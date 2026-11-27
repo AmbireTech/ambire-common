@@ -48,6 +48,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController, SafeDeploymentRequestError } from '../../interfaces/safe'
@@ -274,6 +275,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #onBroadcastFailed: OnBroadcastFailed
 
+  #privacyPools: IPrivacyPoolsController
+
   userRequests: UserRequest[] = []
 
   userRequestsWaitingAccountSwitch: UserRequestWaitingAccountSwitch[] = []
@@ -417,6 +420,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest,
     onBroadcastSuccess,
     onBroadcastFailed,
+    privacyPools,
     shouldSimulateAccountOps = true
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -455,6 +459,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    privacyPools: IPrivacyPoolsController
     shouldSimulateAccountOps?: boolean
   }) {
     super(eventEmitterRegistry)
@@ -490,6 +495,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#privacyPools = privacyPools
     this.shouldSimulateAccountOps = shouldSimulateAccountOps
 
     // `currentRequestDappVerificationBanners` is derived from DappsController state (the dapp
@@ -4177,6 +4183,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           dapps: this.#dapps,
           erc7730: this.#erc7730,
           contractInfo: this.#contractInfo,
+          privacyPools: this.#privacyPools,
           fromRequestId: requestId,
           accountOp: providedAccountOp
             ? {

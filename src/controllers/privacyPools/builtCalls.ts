@@ -81,6 +81,11 @@ export class PrivacyPoolsBuiltCalls {
     builtCall.broadcast = { changeId: getChangeId(builtCall) }
   }
 
+  /** What is known of the call, if it was built here. Unlike `take`, keeps it. */
+  get(chainId: bigint, call: Call): BuiltCall | undefined {
+    return this.#builtCalls.get(getCallKey(chainId, call))
+  }
+
   /** Forgets the call and returns what was known of it, if it was built here. */
   take(chainId: bigint, call: Call): BuiltCall | undefined {
     const key = getCallKey(chainId, call)

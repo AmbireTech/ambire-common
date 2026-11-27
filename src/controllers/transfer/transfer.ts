@@ -189,7 +189,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   /** Lets a newer deposit preparation discard the result of an older, slower one. */
   #privacyPoolsDepositPreparationId = 0
 
-  #privacyPools?: IPrivacyPoolsController
+  #privacyPools: IPrivacyPoolsController
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
@@ -283,7 +283,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     erc7730: IErc7730Controller,
     contractInfo: IContractInfoController,
     platform: Platform,
-    privacyPools?: IPrivacyPoolsController,
+    privacyPools: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -360,7 +360,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }, 'transfer-recipient-phishing-check')
 
     // Re-validates the amount once the entrypoint's deposit limits are read
-    this.#privacyPools?.onUpdate((forceEmit) => {
+    this.#privacyPools.onUpdate((forceEmit) => {
       if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient) return
 
       this.propagateUpdate(forceEmit)
@@ -582,7 +582,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   /** Whether a Privacy Pools account can receive this token, and send it out again. */
   #isPrivacyPoolsDepositToken(token: TokenResult) {
     return (
-      !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
+      this.#privacyPools.supportedChainIds.includes(token.chainId.toString()) &&
       !!getPrivacyPoolsDepositAsset(token.chainId, token.address)
     )
   }
@@ -845,7 +845,7 @@ export class TransferController extends EventEmitter implements ITransferControl
    */
   get privacyPoolsDepositPrivacy(): PrivacyPoolsDepositPrivacy | null {
     const token = this.selectedToken
-    if (!this.#privacyPools || !this.privacyPoolsRecipient || !token) return null
+    if (!this.privacyPoolsRecipient || !token) return null
 
     return this.#privacyPools.getDepositPrivacy({
       chainId: token.chainId.toString(),
@@ -1090,8 +1090,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   /** Loads the entrypoint's deposit limits for the selected token. */
   #loadPrivacyPoolsDepositLimits() {
     const token = this.selectedToken
-    if (!this.#privacyPools || !token || !getPrivacyPoolsDepositAsset(token.chainId, token.address))
-      return
+    if (!token || !getPrivacyPoolsDepositAsset(token.chainId, token.address)) return
 
     this.#privacyPools
       .loadDepositAssetConfig(
@@ -1238,7 +1237,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!this.privacyPoolsRecipient || !token) return null
 
     return (
-      this.#privacyPools?.depositAssetConfigs[
+      this.#privacyPools.depositAssetConfigs[
         getPrivacyPoolsTokenId(token.chainId.toString(), token.address)
       ] ?? null
     )
@@ -1561,11 +1560,11 @@ export class TransferController extends EventEmitter implements ITransferControl
     /** Already sanitized to the token's decimals. */
     amount: string
   }): Promise<Call[]> {
-    if (!this.#privacyPools || !this.#selectedAccount.account)
+    if (!this.#selectedAccount.account)
       throw new EmittableError({
         message: 'Sending to a Privacy Pools account is not available here.',
         level: 'expected',
-        error: new Error('transfer: no Privacy Pools controller or selected account')
+        error: new Error('transfer: no selected account')
       })
 
     return this.#privacyPools.buildDepositCalls({
@@ -1713,6 +1712,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

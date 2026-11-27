@@ -1006,6 +1006,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
+   * The name of the Privacy Pools account a deposit goes to, so a batch of deposits into several
+   * accounts tells them apart. Known only for a deposit this wallet built since it started, as the
+   * built calls are kept in memory only. Undefined for any other call, or an account with no name.
+   */
+  getDepositAccountName(chainId: bigint, call: Call): string | undefined {
+    const builtCall = this.#builtCalls.get(chainId, call)
+    if (builtCall?.kind !== 'deposit') return undefined
+
+    return this.accounts.find(({ seedId }) => seedId === builtCall.seedId)?.label || undefined
+  }
+
+  /**
    * Adds the expected change of each deposit or ragequit this wallet built, once its transaction is
    * sent, so the balance shows it right away. Other calls are ignored.
    */

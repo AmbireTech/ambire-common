@@ -1,7 +1,8 @@
 import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
-  getPrivacyPoolsChainConfig
+  getPrivacyPoolsChainConfig,
+  isPrivacyPoolsNativeAsset
 } from '../../../../consts/privacyPools'
 import { PrivacyPoolsBroadcaster } from '../../../../interfaces/privacyPools'
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -20,17 +21,33 @@ import {
   getAddressVisualization,
   getErc7730Visualization,
   getLabel,
+  getText,
   getToken
 } from '../../utils'
 
 /**
+ * Names the Privacy Pools account a deposit goes to, when the wallet knows it (see
+ * `HumanizerCallContext.privacyPoolsAccountName`), so deposits into several accounts can be told apart.
+ */
+const getDepositRecipient = (accountName: string | undefined): HumanizerVisualization[] =>
+  accountName
+    ? [getLabel('to the Privacy Pools account'), { ...getText(accountName), isBold: true }]
+    : [getLabel('to a Privacy Pools account')]
+
+/**
  * Shows a Privacy Pools deposit as a send to a Privacy Pools account. The call ties it to the
- * account only by a precommitment, so no account is named.
+ * account only by a precommitment, so the account is named only when the wallet built the deposit
+ * and passed its name along.
  *
  * Also shows a ragequit, the public reclaim of a deposit still being verified, as getting it back
  * from Privacy Pools. Only for the pools we know, as the token comes from which pool it is.
  */
-export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+export const privacyPoolsModule: HumanizerCallModule = (
+  accountOp: AccountOp,
+  call: IrCall,
+  _humanizerMeta,
+  context
+) => {
   const config = accountOp.chainId ? getPrivacyPoolsChainConfig(accountOp.chainId) : undefined
   if (!config || !call.to) return call
 
@@ -54,12 +71,18 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
   const deposit = readPrivacyPoolsDeposit({ data: call.data, value: call.value })
   if (!deposit) return call
 
+  const tokenAddress = fromPrivacyPoolsAssetAddress(deposit.assetAddress)
+
   return {
     ...call,
+    // A native deposit's amount is the call's value. An ERC-20 one sends no value, so any value it
+    // has is still shown on its own, as is any value that differs from the amount shown (e.g. a
+    // token deposit with the address that stands for ETH)
+    showsCallValue: isPrivacyPoolsNativeAsset(tokenAddress) && call.value === deposit.amount,
     fullVisualization: [
       getAction('Send'),
-      getToken(fromPrivacyPoolsAssetAddress(deposit.assetAddress), deposit.amount),
-      getLabel('to a Privacy Pools account')
+      getToken(tokenAddress, deposit.amount),
+      ...getDepositRecipient(context?.privacyPoolsAccountName)
     ]
   }
 }
