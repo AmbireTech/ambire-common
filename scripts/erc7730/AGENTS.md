@@ -8,8 +8,9 @@ change here as a security change.
 ## How it works
 
 - `npm run humanizer:update:erc7730Registry` builds `src/consts/erc7730/registry.json` from the
-  upstream registry (https://github.com/ethereum/clear-signing-erc7730-registry), at its last
-  commit that is at least 14 days old, then applies Ambire's changes (see `amend.ts`).
+  latest commit of the upstream registry (https://github.com/ethereum/clear-signing-erc7730-registry),
+  then applies Ambire's changes (see `amend.ts`). Review the `registry.json` diff of every update:
+  it is the only check of what upstream changed.
 - There are three kinds of change:
   - **amend** (`amendCalldataDescriptors`, `amendEip712Descriptors`): changes an upstream
     descriptor. The result is bundled as `ambire/<descriptor path>`, so it is clear which
@@ -106,7 +107,7 @@ that comes later to the Ambire change. Upstream expects:
 
 ## 5. When upstream merges it, the update fails: that is expected
 
-About 14 days after upstream merges the same fix, `npm run humanizer:update:erc7730Registry`
+The first update after upstream merges the same fix (`npm run humanizer:update:erc7730Registry`)
 fails, for example `The amend of <path> (<reason>): expected 14 ... found 0`, or for an add
 `the registry already has <path> for <key>`. The Ambire-only amend script change (the amend or add
 in `amendments.ts`) is then likely no longer needed.

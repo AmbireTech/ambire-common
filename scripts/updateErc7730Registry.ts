@@ -15,9 +15,9 @@ import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
 // registry every week, so run this from time to time with
 // `npm run humanizer:update:erc7730Registry` and commit the changes. It is NOT called at runtime.
 //
-// It reads the last commit of the registry's main branch that is at least
-// `UPSTREAM_MIN_AGE_DAYS` old, so that a mistake made upstream can be found and fixed there
-// before the wallet ships it - or the commit the wallet already ships, if that one is newer.
+// It reads the latest commit of the registry's main branch. It does not wait for a commit to get
+// older: a delay would still ship a bad descriptor that upstream removed within the delay, and
+// every update is reviewed as a diff of `registry.json` before it is merged.
 //
 // Only the descriptors the indexes point at (and the ones they include) are kept; the tests and
 // the rest of the registry are left out. The update fails, and writes nothing, if any of these
@@ -36,9 +36,6 @@ import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
 
 const REGISTRY_REPOSITORY_URL = 'https://github.com/ethereum/clear-signing-erc7730-registry'
 const REGISTRY_BRANCH = 'master'
-
-/** How old the registry commit has to be, see the comment at the top */
-const UPSTREAM_MIN_AGE_DAYS = 14
 
 /**
  * The share of an index that can disappear in one update. More likely means that the registry
@@ -73,34 +70,20 @@ const git = (directory: string, args: string[]) =>
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
-/** Whether `ancestor` is `descendant` or a commit before it on its branch */
-const isAncestor = (directory: string, ancestor: string, descendant: string) => {
-  try {
-    git(directory, ['merge-base', '--is-ancestor', ancestor, descendant])
-    return true
-  } catch {
-    // Also when `descendant` isn't on the branch at all, e.g. after a force push upstream
-    return false
-  }
-}
-
 /**
- * Clones the registry repository and picks the commit to read: the last one that is at least
- * `UPSTREAM_MIN_AGE_DAYS` old, or the one the wallet already ships if that is newer, so that an
- * update never goes back to an older registry. Bare, as the files are read from git itself: the
- * registry has files whose paths differ only in case, which a case-insensitive file system
- * (macOS) would check out as one file
+ * Clones the latest commit of the registry repository. Bare, as the files are read from git
+ * itself: the registry has files whose paths differ only in case, which a case-insensitive file
+ * system (macOS) would check out as one file
  */
-const cloneRegistry = (
-  directory: string,
-  shippedCommit: string | undefined
-): { source: Source; files: UpstreamFiles } => {
+const cloneRegistry = (directory: string): { source: Source; files: UpstreamFiles } => {
   execFileSync(
     'git',
     [
       'clone',
       '--quiet',
       '--bare',
+      '--depth',
+      '1',
       '--single-branch',
       '--branch',
       REGISTRY_BRANCH,
@@ -110,19 +93,7 @@ const cloneRegistry = (
     { stdio: 'inherit' }
   )
 
-  const oldEnoughCommit = git(directory, [
-    'rev-list',
-    '-1',
-    `--before=${UPSTREAM_MIN_AGE_DAYS} days ago`,
-    REGISTRY_BRANCH
-  ]).trim()
-  if (!oldEnoughCommit) {
-    throw new Error(`The registry has no commit older than ${UPSTREAM_MIN_AGE_DAYS} days`)
-  }
-  const commit =
-    shippedCommit && isAncestor(directory, oldEnoughCommit, shippedCommit)
-      ? shippedCommit
-      : oldEnoughCommit
+  const commit = git(directory, ['rev-parse', REGISTRY_BRANCH]).trim()
   const date = git(directory, ['show', '-s', '--format=%cI', commit]).trim()
   const paths = new Set(
     git(directory, ['ls-tree', '-r', '--name-only', commit]).split('\n').filter(Boolean)
@@ -363,10 +334,7 @@ const run = async () => {
       readOwnDescriptors(),
       readPreviousRegistry()
     ])
-    const { source: upstreamSource, files } = cloneRegistry(
-      registryDirectory,
-      previous?.source?.commit
-    )
+    const { source: upstreamSource, files } = cloneRegistry(registryDirectory)
     const {
       registry: { calldataIndex, eip712Index, descriptors },
       notes
