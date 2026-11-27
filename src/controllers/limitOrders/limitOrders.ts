@@ -103,6 +103,7 @@ import {
 } from '../../services/cowswap/helper'
 import { CowSwapAccountOrder } from '../../services/cowswap/types'
 import { generateUuid } from '../../utils/uuid'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
   OnBroadcastFailed,
@@ -205,6 +206,9 @@ const STABLECOIN_NATIVE_CHAIN_IDS = [100]
 
 /** How many significant digits the price taken from today's price is rounded to */
 const PRICE_SIGNIFICANT_DIGITS = 6
+
+/** How long reading a token's permission and balance may take, see `#readPermissionAndBalance` */
+const TOKEN_READ_TIMEOUT_MS = 15 * 1000
 
 /** How many significant digits a typed price keeps when the user flips the way it reads */
 const FLIPPED_PRICE_SIGNIFICANT_DIGITS = 12
@@ -464,6 +468,14 @@ export class LimitOrdersController extends EventEmitter {
 
   /** How the user chose to read the price, see `priceView`. Null until it's set for the pair */
   #priceView: LimitOrderPriceView | null = null
+
+  /**
+   * The typed price before the last flip, and what the flip turned it into, so flipping back
+   * gives the user the price they had. Turned each way, the price is rounded in the user's favour,
+   * so flipping back and forth would otherwise move it a little each time (2009.9 to 2009.90000001)
+   */
+  #priceBeforeFlip: { view: LimitOrderPriceView; amount: string; flippedAmount: string } | null =
+    null
 
   /** Whether the user picked the token received, rather than only the one picked for them */
   #hasUserPickedTokens = false
@@ -1443,6 +1455,7 @@ export class LimitOrdersController extends EventEmitter {
       this.price = DEFAULT_LIMIT_ORDER_PRICE
       this.isPriceTyped = false
       this.#priceView = null
+      this.#priceBeforeFlip = null
       if (haveTokensTradedPlaces) this.#setPriceFromMarketQuote()
       else this.marketQuote = null
       this.#scheduleMarketQuoteUpdate()
@@ -1639,11 +1652,23 @@ export class LimitOrdersController extends EventEmitter {
    * user's favour, so a price at today's doesn't become worse than it
    */
   flipPriceView() {
-    const nextView: LimitOrderPriceView = this.priceView === 'cost' ? 'get' : 'cost'
+    const currentView = this.priceView
+    const nextView: LimitOrderPriceView = currentView === 'cost' ? 'get' : 'cost'
 
     if (this.price.mode === 'absolute') {
-      this.price =
-        this.#getFlippedAbsolutePrice(this.price.amount, nextView) ?? DEFAULT_LIMIT_ORDER_PRICE
+      const currentAmount = this.price.amount
+      const previous = this.#priceBeforeFlip
+      // Flipped back with nothing changed in between, so it's the price the user had
+      const isFlippingBack = previous?.view === nextView && previous.flippedAmount === currentAmount
+      const flippedPrice = isFlippingBack
+        ? { mode: 'absolute' as const, amount: previous.amount }
+        : this.#getFlippedAbsolutePrice(currentAmount, nextView)
+
+      this.price = flippedPrice ?? DEFAULT_LIMIT_ORDER_PRICE
+      this.#priceBeforeFlip =
+        flippedPrice?.mode === 'absolute'
+          ? { view: currentView, amount: currentAmount, flippedAmount: flippedPrice.amount }
+          : null
     }
 
     this.#priceView = nextView
@@ -2980,19 +3005,27 @@ export class LimitOrdersController extends EventEmitter {
     tokenAddress: string,
     accountAddr: string
   ): Promise<{ allowance: bigint; balance: bigint }> {
-    const [allowanceResult, balanceResult] = await Promise.all([
-      provider.call({
-        to: tokenAddress,
-        data: erc20Interface.encodeFunctionData('allowance', [
-          accountAddr,
-          COWSWAP_VAULT_RELAYER_ADDRESS
-        ])
-      }),
-      provider.call({
-        to: tokenAddress,
-        data: erc20Interface.encodeFunctionData('balanceOf', [accountAddr])
-      })
-    ])
+    // A network that doesn't answer would otherwise hold up the orders' refreshes for minutes
+    const [allowanceResult, balanceResult] = await withTimeout(
+      () =>
+        Promise.all([
+          provider.call({
+            to: tokenAddress,
+            data: erc20Interface.encodeFunctionData('allowance', [
+              accountAddr,
+              COWSWAP_VAULT_RELAYER_ADDRESS
+            ])
+          }),
+          provider.call({
+            to: tokenAddress,
+            data: erc20Interface.encodeFunctionData('balanceOf', [accountAddr])
+          })
+        ]),
+      {
+        timeoutMs: TOKEN_READ_TIMEOUT_MS,
+        message: 'The network took too long to answer. Please try again.'
+      }
+    )
 
     return {
       allowance: BigInt(erc20Interface.decodeFunctionResult('allowance', allowanceResult)[0]),
@@ -3393,6 +3426,7 @@ export class LimitOrdersController extends EventEmitter {
     this.fromAmount = ''
     this.price = DEFAULT_LIMIT_ORDER_PRICE
     this.isPriceTyped = false
+    this.#priceBeforeFlip = null
     this.marketQuote = null
     this.marketQuoteStatus = 'INITIAL'
     this.marketQuoteError = null

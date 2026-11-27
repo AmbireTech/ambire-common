@@ -1771,6 +1771,37 @@ describe('LimitOrdersController price', () => {
     controller.resetForm()
   })
 
+  it('gives back the same price when the user flips the view and flips it back', async () => {
+    const { controller } = await makePriceController()
+    controller.setPrice({ mode: 'absolute', amount: '2009.9' }, typedForCurrentForm(controller))
+
+    controller.flipPriceView()
+    const flippedPrice = controller.price
+    controller.flipPriceView()
+
+    // Rounded in the user's favour each way, it would otherwise become 2009.90000001
+    expect(controller.price).toEqual({ mode: 'absolute', amount: '2009.9' })
+
+    controller.flipPriceView()
+    expect(controller.price).toEqual(flippedPrice)
+
+    controller.resetForm()
+  })
+
+  it('flips a price the user changed after flipping, instead of going back to the old one', async () => {
+    const { controller } = await makePriceController()
+    controller.setPrice({ mode: 'absolute', amount: '2009.9' }, typedForCurrentForm(controller))
+
+    controller.flipPriceView()
+    controller.setPrice({ mode: 'absolute', amount: '0.0004' }, typedForCurrentForm(controller))
+    controller.flipPriceView()
+
+    // 0.0004 WETH for 1 USDC is 2500 USDC for 1 WETH
+    expect(controller.price).toEqual({ mode: 'absolute', amount: '2500' })
+
+    controller.resetForm()
+  })
+
   it('drops a price typed for other tokens', async () => {
     const { controller } = await makePriceController()
     const priceBefore = controller.price
