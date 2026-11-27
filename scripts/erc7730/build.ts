@@ -166,7 +166,13 @@ export const buildRegistry = (upstream: UpstreamFiles): BuiltRegistry => {
       problems.push(`The registry has no ${file}`)
       return {}
     }
-    const index = upstream.read(file)
+    let index: unknown
+    try {
+      index = upstream.read(file)
+    } catch (error) {
+      problems.push(`${file} can't be read: ${error instanceof Error ? error.message : error}`)
+      return {}
+    }
     if (isPlainObject(index)) return index
 
     problems.push(`${file} is not a JSON object`)

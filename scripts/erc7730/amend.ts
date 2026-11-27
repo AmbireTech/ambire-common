@@ -2,7 +2,11 @@ import { id } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
 import { ERC7730_AMBIRE_PATH_PREFIX } from '../../src/libs/humanizer/erc7730/consts'
-import { getIncludes, mergeDescriptors } from '../../src/libs/humanizer/erc7730/descriptor'
+import {
+  getIncludes,
+  mergeDescriptors,
+  validateDescriptor
+} from '../../src/libs/humanizer/erc7730/descriptor'
 import { ERC7730_MAX_RESOLUTION_DEPTH } from '../../src/libs/humanizer/erc7730/registry'
 import {
   Erc7730Descriptor,
@@ -83,8 +87,15 @@ export const NO_AMENDMENTS: Amendments = {
 
 class ExpectationError extends Error {}
 
-/** The type a typed message format is for: the name before the first `(` of its signature */
-const getPrimaryType = (format: string) => format.slice(0, format.indexOf('('))
+/**
+ * The type a typed message format is for: the name before the first `(` of its signature, or null
+ * if the format is not written as a signature (`Type(...)`)
+ */
+const getPrimaryType = (format: string): string | null => {
+  const bracketIndex = format.indexOf('(')
+
+  return bracketIndex > 0 && format.endsWith(')') ? format.slice(0, bracketIndex) : null
+}
 
 const getFormats = (descriptor: Erc7730Descriptor) => descriptor.display?.formats ?? {}
 
@@ -99,13 +110,21 @@ const collectFields = (
   })
 }
 
-/** Whether a value is a list of `{ chainId, address }` */
+/** Whether a value is a chain id: a positive whole number, or one written as a decimal string */
+const isChainId = (value: unknown): value is number | string => {
+  if (typeof value !== 'number' && typeof value !== 'string') return false
+  const chainId = Number(value)
+
+  return Number.isSafeInteger(chainId) && chainId > 0 && String(chainId) === String(value)
+}
+
+/** The value if it is a list of `{ chainId, address }`, otherwise null */
 const getDeployments = (value: unknown): { chainId: number; address: string }[] | null => {
   if (!Array.isArray(value)) return null
   const isValid = value.every(
     (deployment) =>
       isPlainObject(deployment) &&
-      (typeof deployment.chainId === 'number' || typeof deployment.chainId === 'string') &&
+      isChainId(deployment.chainId) &&
       typeof deployment.address === 'string'
   )
 
@@ -194,7 +213,9 @@ export const applyAmendments = (
   /** A descriptor merged with everything it includes, or null if anything is missing */
   const flatten = (name: string, depth = 0): Erc7730Descriptor | null => {
     if (!hasDescriptor(name)) return null
-    const descriptor = descriptors[name] as Erc7730Descriptor
+    const descriptor = descriptors[name]
+    // Every bundled descriptor passed this check already. It gives the descriptor its type
+    if (!validateDescriptor(descriptor)) return null
     const includes = getIncludes(descriptor)
     if (!includes.length) return structuredClone(descriptor)
     if (depth >= ERC7730_MAX_RESOLUTION_DEPTH) return null
@@ -254,8 +275,18 @@ export const applyAmendments = (
       return
     }
 
+    const invalidFormats = formats.filter((format) => !getPrimaryType(format))
+    if (invalidFormats.length) {
+      problems.push(
+        `${reference}: ${name} has typed message formats not written as \`Type(...)\`: ${invalidFormats.join(
+          ', '
+        )}`
+      )
+      return
+    }
+
     const hashesByPrimaryType = formats.reduce<Record<string, string[]>>((acc, format) => {
-      const primaryType = getPrimaryType(format)
+      const primaryType = getPrimaryType(format)!
       acc[primaryType] = [...(acc[primaryType] ?? []), id(format)]
       return acc
     }, {})
@@ -303,6 +334,18 @@ export const applyAmendments = (
     const eip712 = isPlainObject(context.eip712) ? context.eip712 : null
     const calldataDeployments = contract && getDeployments(contract.deployments)
     const eip712Deployments = eip712 && getDeployments(eip712.deployments)
+    const invalidLists = [
+      contract?.deployments !== undefined && !calldataDeployments && 'context.contract.deployments',
+      eip712?.deployments !== undefined && !eip712Deployments && 'context.eip712.deployments'
+    ].filter(Boolean)
+    if (invalidLists.length) {
+      invalidLists.forEach((list) =>
+        problems.push(
+          `${reference}: \`${list}\` is not a list of \`{ chainId, address }\` with decimal chain ids`
+        )
+      )
+      return
+    }
     if (!calldataDeployments?.length && !eip712Deployments?.length) {
       problems.push(
         `${reference} has no \`context.contract.deployments\` or \`context.eip712.deployments\``
@@ -398,8 +441,9 @@ export const applyAmendments = (
       first = run()
       second = run()
     } catch (error) {
-      if (!(error instanceof ExpectationError)) throw error
-      problems.push(`${reference}: ${error.message}`)
+      // Any other error is reported too, e.g. a `TypeError` once what the amend reads is gone, so
+      // that it names the amend. It keeps its type in the message
+      problems.push(`${reference}: ${error instanceof ExpectationError ? error.message : error}`)
       return
     }
 
@@ -441,7 +485,7 @@ export const applyAmendments = (
       problems.push(`${reference}: ${copyName} is already in the registry`)
       return
     }
-    descriptors[copyName] = first.descriptor as Record<string, unknown>
+    descriptors[copyName] = first.descriptor
     amendedPaths.set(name, copyName)
     keys.forEach((key) => {
       if (kind === 'calldata') {

@@ -153,6 +153,33 @@ describe('applyAmendments: amends', () => {
     ])
   })
 
+  test('names the amend for any other error, and still lists the other problems', () => {
+    const registry = upstreamRegistry()
+    delete (registry.descriptors['pool/calldata-Pool.json'] as any).display
+    delete (registry.descriptors['pool/common-Pool.json'] as any).display
+    const amendment: Amendment = {
+      ...fixValue,
+      amend: ({ descriptor }) => {
+        descriptor.display!.formats!['mint()']!.intent = 'Add'
+      }
+    }
+
+    const problems = getProblems(
+      {
+        amendCalldataDescriptors: { 'pool/calldata-Pool.json': amendment },
+        addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Gone.json' }
+      },
+      {},
+      registry
+    )
+
+    expect(problems).toHaveLength(2)
+    expect(problems[0]).toMatch(/^The amend of pool\/calldata-Pool\.json \(test\): TypeError: /)
+    expect(problems[1]).toBe(
+      `The add of pool/calldata-Gone.json for ${NEW_KEY}: the descriptor is not bundled`
+    )
+  })
+
   test('fails when it checks nothing', () => {
     const amendment: Amendment = {
       ...fixValue,
@@ -346,6 +373,23 @@ describe('applyAmendments: adds', () => {
     })
   })
 
+  test.each(['Permit', '(address spender)', 'Permit(address spender'])(
+    'fails for the typed message format %s, which is not a signature',
+    (format) => {
+      const registry = upstreamRegistry()
+      registry.descriptors['permit/eip712-Bad.json'] = {
+        $schema: SCHEMA,
+        display: { formats: { [format]: { intent: 'Permit' }, [ORDER]: { intent: 'Order' } } }
+      }
+
+      expect(
+        getProblems({ addEip712Descriptors: { [NEW_KEY]: 'permit/eip712-Bad.json' } }, {}, registry)
+      ).toEqual([
+        `The add of permit/eip712-Bad.json for ${NEW_KEY}: permit/eip712-Bad.json has typed message formats not written as \`Type(...)\`: ${format}`
+      ])
+    }
+  )
+
   test('fails once the registry has the primary type for the contract', () => {
     const registry = upstreamRegistry()
     registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Permit.json' }] }
@@ -377,6 +421,42 @@ describe("applyAmendments: Ambire's own descriptors", () => {
 
     expect(registry.calldataIndex[NEW_KEY]).toBe('dex/calldata-Dex.json')
     expect(registry.descriptors['dex/calldata-Dex.json']).toEqual(own())
+  })
+
+  test('takes a chain id written as a decimal string', () => {
+    const { registry } = applyAmendments(upstreamRegistry(), NO_AMENDMENTS, {
+      'dex/calldata-Dex.json': own({
+        context: { contract: { deployments: [{ chainId: '56', address: KEY.split(':')[2] }] } }
+      })
+    })
+
+    expect(registry.calldataIndex[NEW_KEY]).toBe('dex/calldata-Dex.json')
+  })
+
+  test.each(['base', '0x38', '056', ' 56', '', 0, -1, 1.5, null])(
+    'names the descriptor for the invalid chain id %j',
+    (chainId) => {
+      const descriptor = own({
+        context: { contract: { deployments: [{ chainId, address: KEY.split(':')[2] }] } }
+      })
+
+      expect(getProblems({}, { 'dex/calldata-Dex.json': descriptor })).toEqual([
+        "Ambire's descriptor dex/calldata-Dex.json: `context.contract.deployments` is not a list of `{ chainId, address }` with decimal chain ids"
+      ])
+    }
+  )
+
+  test('does not drop an invalid deployments list when the other one is valid', () => {
+    const descriptor = own({
+      context: {
+        contract: { deployments: [{ chainId: 56, address: KEY.split(':')[2] }] },
+        eip712: { deployments: [{ chainId: 'base', address: KEY.split(':')[2] }] }
+      }
+    })
+
+    expect(getProblems({}, { 'dex/calldata-Dex.json': descriptor })).toEqual([
+      "Ambire's descriptor dex/calldata-Dex.json: `context.eip712.deployments` is not a list of `{ chainId, address }` with decimal chain ids"
+    ])
   })
 
   test('fails once the registry has a descriptor for one of their deployments', () => {

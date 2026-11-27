@@ -195,6 +195,20 @@ describe('buildRegistry', () => {
     expect(getProblems(upstream)).toHaveLength(2)
   })
 
+  test('names an index that is not valid JSON, and still lists the other problems', () => {
+    const upstream = withIndexes({}, {}, { [KEY]: [] })
+
+    expect(
+      getProblems({
+        paths: upstream.paths,
+        read: (path) => (path === CALLDATA_INDEX_FILE ? JSON.parse('{ "a": ') : upstream.read(path))
+      })
+    ).toEqual([
+      expect.stringMatching(/^index\.calldata\.json can't be read: .+/),
+      `${EIP712_INDEX_FILE} (${KEY}): the entry is not a JSON object`
+    ])
+  })
+
   test('fails when the registry has no indexes', () => {
     expect(getProblems(upstreamOf({}))).toEqual([
       `The registry has no ${CALLDATA_INDEX_FILE}`,
