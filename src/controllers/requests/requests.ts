@@ -32,7 +32,13 @@ import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { IContractInfoController } from '../../interfaces/contractInfo'
-import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import {
+  Dapp,
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappProviderRequest,
+  DappVerificationBanner,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -42,6 +48,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController, SafeDeploymentRequestError } from '../../interfaces/safe'
@@ -147,6 +154,14 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
+/** Dapp requests whose screen warns about the app, without a signing controller doing it */
+const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
+  'walletAddEthereumChain',
+  'walletWatchAsset',
+  'ethGetEncryptionPublicKey',
+  'ethDecrypt'
+]
 
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
@@ -259,6 +274,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #onBroadcastSuccess: OnBroadcastSuccess
 
   #onBroadcastFailed: OnBroadcastFailed
+
+  #privacyPools: IPrivacyPoolsController
 
   userRequests: UserRequest[] = []
 
@@ -403,6 +420,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest,
     onBroadcastSuccess,
     onBroadcastFailed,
+    privacyPools,
     shouldSimulateAccountOps = true
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -441,6 +459,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    privacyPools: IPrivacyPoolsController
     shouldSimulateAccountOps?: boolean
   }) {
     super(eventEmitterRegistry)
@@ -476,7 +495,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#privacyPools = privacyPools
     this.shouldSimulateAccountOps = shouldSimulateAccountOps
+
+    // `currentRequestDappVerificationBanners` is derived from DappsController state (the dapp
+    // verification status), so its updates must be propagated - otherwise a banner computed
+    // before the status resolves would stay stale in the UI.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps.onUpdate((forceEmit) => {
+      if (this.#getCurrentRequestDappSessionForVerification()) this.propagateUpdate(forceEmit)
+    }, 'requests-dapps-verification')
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -1677,6 +1705,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * of its requests are queued, and whether it has been refused enough to be worth silencing.
    * Null when the request didn't come from an app.
    */
+  /**
+   * The dapp session of the current request, when it is one of the dapp requests whose screen
+   * shows the dapp verification banners from `currentRequestDappVerificationBanners`. Signing
+   * requests are left out, as their own controllers (SignMessage, SignAccountOp) compute them.
+   */
+  #getCurrentRequestDappSessionForVerification(): DappProviderRequest['session'] | null {
+    const request = this.currentUserRequest
+    if (!request) return null
+    if (!DAPP_VERIFICATION_REQUEST_KINDS.includes(request.kind)) return null
+
+    return request.dappPromises[0]?.session || null
+  }
+
+  /**
+   * Scam checker warnings for the app behind the current add network, add token, get encryption
+   * public key or decrypt request. Empty for any other request, or when no warning applies.
+   */
+  get currentRequestDappVerificationBanners(): DappVerificationBanner[] {
+    const session = this.#getCurrentRequestDappSessionForVerification()
+    if (!session?.origin) return []
+
+    const banner = this.#dapps.getDappVerificationBanner([session.origin], {
+      includeDappNamesInText: false,
+      sessionId: session.sessionId
+    })
+    if (!banner) return []
+    // Same as in the SignMessage flow - "not in catalog" is too noisy and not actionable on its own.
+    if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) return []
+
+    return [banner]
+  }
+
   get currentRequestRejectOptions(): {
     dappRequestsCount: number
     canSilenceDapp: boolean
@@ -3539,6 +3599,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     account: Account,
     sourceNetworks: Network[]
   ): Promise<SafeAccountCreation | null> {
+    // The creation data comes from the Safe API, which the user opted out of. The request is
+    // turned away, asking the user to activate the Safe on this network in the Safe app instead.
+    // Read once the flags are loaded, as until then they are the defaults (e.g. a dapp request
+    // right after the background restarted)
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return null
+
     for (const network of sourceNetworks) {
       const provider = this.#providers.providers[network.chainId.toString()]
       if (!provider) return null
@@ -3827,7 +3894,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #createOrUpdateCallsUserRequest(
     {
-      calls,
+      calls: rawCalls,
       meta,
       accountOp: providedAccountOp,
       dappPromises = [],
@@ -3836,6 +3903,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
+    // Every transaction request (app calls, queued Safe transactions, the wallet's own calls)
+    // comes through here. Hex is case-insensitive onchain, so the same bytes can arrive in upper
+    // or mixed case. Lower-case it once, so every check below and every consumer of the account
+    // op (humanizer, selector decoding, simulation) compares the same text. The bytes, the
+    // transaction hash and the safeTxHash do not change.
+    const calls = rawCalls.map((call) =>
+      call.data && isHex(call.data) ? { ...call, data: call.data.toLowerCase() } : call
+    )
+
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
@@ -4107,6 +4183,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           dapps: this.#dapps,
           erc7730: this.#erc7730,
           contractInfo: this.#contractInfo,
+          privacyPools: this.#privacyPools,
           fromRequestId: requestId,
           accountOp: providedAccountOp
             ? {
@@ -4409,6 +4486,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest,
+      currentRequestDappVerificationBanners: this.currentRequestDappVerificationBanners,
       currentRequestRejectOptions: this.currentRequestRejectOptions
     }
   }

@@ -72,20 +72,20 @@ const isRegistryKey = (key: string): boolean => {
 
 const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
 
-function throwInvalidRelayerResource(path: string): never {
-  throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+function throwInvalidRegistryData(path: string): never {
+  throw new Error(`Invalid ERC-7730 registry data: ${path}`)
 }
 
 export const validateCalldataIndex = (
   payload: unknown,
   path: string
 ): payload is Erc7730CalldataIndex => {
-  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
 
   const index = payload
 
   Object.entries(index).forEach(([key, value]) => {
-    if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRelayerResource(path)
+    if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRegistryData(path)
   })
 
   return true
@@ -95,10 +95,10 @@ const validateEip712IndexEntry = (
   entry: unknown,
   path: string
 ): entry is Erc7730Eip712IndexEntry => {
-  if (!isPlainObject(entry)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(entry)) throwInvalidRegistryData(path)
 
   const indexEntry = entry
-  if (typeof indexEntry.path !== 'string') throwInvalidRelayerResource(path)
+  if (typeof indexEntry.path !== 'string') throwInvalidRegistryData(path)
 
   const { encodeTypeHashes } = indexEntry
   if (
@@ -106,7 +106,7 @@ const validateEip712IndexEntry = (
     (!Array.isArray(encodeTypeHashes) ||
       encodeTypeHashes.some((hash: unknown) => typeof hash !== 'string' || !isHexHash(hash)))
   ) {
-    throwInvalidRelayerResource(path)
+    throwInvalidRegistryData(path)
   }
 
   return true
@@ -116,20 +116,20 @@ export const validateEip712Index = (
   payload: unknown,
   path: string
 ): payload is Erc7730Eip712Index => {
-  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
 
   const index = payload
 
   Object.entries(index).forEach(([registryKey, primaryTypes]) => {
     if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
-      throwInvalidRelayerResource(path)
+      throwInvalidRegistryData(path)
     }
 
     const primaryTypesIndex = primaryTypes
 
     Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
       if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
-        throwInvalidRelayerResource(path)
+        throwInvalidRegistryData(path)
       }
 
       const indexEntries = entries
@@ -141,28 +141,28 @@ export const validateEip712Index = (
 }
 
 const validateDescriptorField = (field: unknown, path: string): field is Erc7730Field => {
-  if (!isPlainObject(field)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(field)) throwInvalidRegistryData(path)
 
   const descriptorField = field
 
   if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
-    throwInvalidRelayerResource(path)
+    throwInvalidRegistryData(path)
   if (descriptorField.label !== undefined && typeof descriptorField.label !== 'string')
-    throwInvalidRelayerResource(path)
+    throwInvalidRegistryData(path)
   if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
-    throwInvalidRelayerResource(path)
+    throwInvalidRegistryData(path)
   }
 
   const { encryption } = descriptorField
   if (encryption !== undefined) {
-    if (!isPlainObject(encryption)) throwInvalidRelayerResource(path)
+    if (!isPlainObject(encryption)) throwInvalidRegistryData(path)
     if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
-      throwInvalidRelayerResource(path)
+      throwInvalidRegistryData(path)
   }
 
   const { fields } = descriptorField
   if (fields !== undefined) {
-    if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
+    if (!Array.isArray(fields)) throwInvalidRegistryData(path)
 
     const nestedFields = fields
     nestedFields.forEach((nestedField) => validateDescriptorField(nestedField, path))
@@ -175,7 +175,7 @@ export const validateDescriptor = (
   payload: unknown,
   path: string
 ): payload is Erc7730Descriptor => {
-  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
 
   const descriptor = payload
   const { includes } = descriptor
@@ -186,31 +186,31 @@ export const validateDescriptor = (
     (!Array.isArray(includes) ||
       includes.some((includePath: unknown) => typeof includePath !== 'string'))
   ) {
-    throwInvalidRelayerResource(path)
+    throwInvalidRegistryData(path)
   }
 
   const { display } = descriptor
   if (display === undefined) return true
-  if (!isPlainObject(display)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(display)) throwInvalidRegistryData(path)
 
   const { formats, definitions } = display
-  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRelayerResource(path)
+  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRegistryData(path)
   if (formats === undefined) return true
-  if (!isPlainObject(formats)) throwInvalidRelayerResource(path)
+  if (!isPlainObject(formats)) throwInvalidRegistryData(path)
 
   const descriptorFormats = formats
 
   Object.values(descriptorFormats).forEach((format: unknown) => {
-    if (!isPlainObject(format)) throwInvalidRelayerResource(path)
+    if (!isPlainObject(format)) throwInvalidRegistryData(path)
 
     const descriptorFormat = format
     if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
-      throwInvalidRelayerResource(path)
+      throwInvalidRegistryData(path)
     }
 
     const { fields } = descriptorFormat
     if (fields === undefined) return
-    if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
+    if (!Array.isArray(fields)) throwInvalidRegistryData(path)
 
     const descriptorFields = fields
     descriptorFields.forEach((field) => validateDescriptorField(field, path))
@@ -381,7 +381,11 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-export const normalizeRelayerPath = (pathOrUrl: string): string => {
+/**
+ * The path of a descriptor with a leading slash, from a registry path, a path with a leading
+ * slash or a URL (whose path is used), so that each descriptor has one key.
+ */
+export const normalizeDescriptorPath = (pathOrUrl: string): string => {
   try {
     const url = new URL(pathOrUrl)
     return `${url.pathname}${url.search}`
@@ -390,16 +394,35 @@ export const normalizeRelayerPath = (pathOrUrl: string): string => {
   }
 }
 
-const getIncludePath = (includePath: string, parentPath: string): string => {
-  if (
-    includePath.startsWith('/') ||
-    includePath.startsWith('http://') ||
-    includePath.startsWith('https://')
-  ) {
-    return normalizeRelayerPath(includePath)
+/**
+ * The path (with a leading slash) of the descriptor an `includes` entry points at, resolved
+ * against the path of the descriptor that includes it the way a file path is: `..` goes up a
+ * folder and a leading `/` starts at the root of the registry. Resolved segment by segment rather
+ * than with `URL`, which would percent-encode spaces and non-ASCII characters and cut the path at
+ * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
+ *
+ * `scripts/updateErc7730Registry.js` resolves includes the same way to decide which files to
+ * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other).
+ */
+export const resolveIncludePath = (includePath: string, parentPath: string): string => {
+  if (includePath.startsWith('http://') || includePath.startsWith('https://')) {
+    return normalizeDescriptorPath(includePath)
   }
 
-  return new URL(includePath, `https://relayer.local${normalizeRelayerPath(parentPath)}`).pathname
+  const parentFolderSegments = includePath.startsWith('/')
+    ? []
+    : normalizeDescriptorPath(parentPath).split('/').slice(0, -1)
+  const segments = [...parentFolderSegments, ...includePath.split('/')].reduce<string[]>(
+    (resolved, segment) => {
+      if (segment === '' || segment === '.') return resolved
+      if (segment === '..') return resolved.slice(0, -1)
+
+      return [...resolved, segment]
+    },
+    []
+  )
+
+  return `/${segments.join('/')}`
 }
 
 const mergeDescriptors = (
@@ -721,7 +744,7 @@ const mergeIncludes = (
   if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
 
   const included = includes.map((includePath) =>
-    mergeIncludes(getIncludePath(includePath, path), known, wants, depth + 1)
+    mergeIncludes(resolveIncludePath(includePath, path), known, wants, depth + 1)
   )
   if (included.some((one) => !one)) return null
 

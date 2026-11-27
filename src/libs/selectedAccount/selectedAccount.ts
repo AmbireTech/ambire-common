@@ -91,6 +91,7 @@ export function calculateSelectedAccountPortfolio(
   portfolioState: AccountState,
   shouldShowPartialResult: boolean,
   isManualUpdate: boolean,
+  shouldSubtractBorrowedFunds: boolean,
   pendingDeliveries: PendingDeliveries = {}
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
@@ -99,7 +100,7 @@ export function calculateSelectedAccountPortfolio(
     return { ...DEFAULT_SELECTED_ACCOUNT_PORTFOLIO }
   }
 
-  const portfolioViewBuilder = new PortfolioViewBuilder()
+  const portfolioViewBuilder = new PortfolioViewBuilder(shouldSubtractBorrowedFunds)
 
   Object.entries(portfolioState).forEach(([chainId, networkData]) => {
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)

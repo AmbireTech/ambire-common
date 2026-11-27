@@ -800,7 +800,8 @@ describe('Portfolio helpers', () => {
 
       const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
 
-      expect(total.usd).toBe(140.05)
+      // The $30 borrowed against the aBasWETH in the wallet is subtracted
+      expect(total.usd).toBeCloseTo(140.05 - 30)
     })
     it('Calculates total excluding hidden tokens', () => {
       const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
@@ -809,7 +810,7 @@ describe('Portfolio helpers', () => {
 
       const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
 
-      expect(total.usd).toBe(140.05)
+      expect(total.usd).toBeCloseTo(140.05 - 30)
     })
     it('Calculates total and includes hidden tokens if specified', () => {
       const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
@@ -822,7 +823,7 @@ describe('Portfolio helpers', () => {
         { includeHiddenTokens: true }
       )
 
-      expect(total.usd).toBe(150.05)
+      expect(total.usd).toBeCloseTo(150.05 - 30)
     })
     it('Returns the defi total when there are no tokens', () => {
       const defiState = structuredClone(PORTFOLIO_STATE['1']?.result?.defiPositions!)
@@ -830,6 +831,19 @@ describe('Portfolio helpers', () => {
       const total = getTotal([], defiState)
 
       expect(total.usd).toBeGreaterThan(0)
+    })
+    it('Counts a lending position at its net value when its only supplied token is hidden', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])!
+      const tokens = ethereumState.result!.tokens.map((token) =>
+        token.symbol === 'aBasWETH'
+          ? { ...token, flags: { ...token.flags, isHidden: true } }
+          : token
+      )
+
+      const total = getTotal(tokens, ethereumState.result!.defiPositions)
+
+      // The $100 aBasWETH is no longer counted, the $170 net Aave position is counted instead
+      expect(total.usd).toBeCloseTo(140.05 - 100 + 170)
     })
   })
   describe('getHintsError', () => {

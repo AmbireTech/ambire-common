@@ -16,11 +16,15 @@ import {
 
 describe('toSafeResolveFingerprint', () => {
   test('is the same whatever order the parts come in', () => {
-    expect(toSafeResolveFingerprint(['b', 'a', 'c'])).toBe(toSafeResolveFingerprint(['c', 'b', 'a']))
+    expect(toSafeResolveFingerprint(['b', 'a', 'c'])).toBe(
+      toSafeResolveFingerprint(['c', 'b', 'a'])
+    )
   })
 
   test('changes when a part changes', () => {
-    expect(toSafeResolveFingerprint(['txn:0x1:2'])).not.toBe(toSafeResolveFingerprint(['txn:0x1:3']))
+    expect(toSafeResolveFingerprint(['txn:0x1:2'])).not.toBe(
+      toSafeResolveFingerprint(['txn:0x1:3'])
+    )
   })
 
   test('does not modify the passed parts', () => {
@@ -71,9 +75,9 @@ describe('getSafeResolveTimeout', () => {
   const firstBackoffCount = SAFE_RESOLVE_UNCHANGED_CHECKS_BEFORE_BACKOFF
 
   test('uses the fast interval while a wallet window is open and nothing has slowed it down', () => {
-    expect(getSafeResolveTimeout({ activeTimeout, isUiActive: true, unchangedChecksCount: 0 })).toBe(
-      activeTimeout
-    )
+    expect(
+      getSafeResolveTimeout({ activeTimeout, isUiActive: true, unchangedChecksCount: 0 })
+    ).toBe(activeTimeout)
   })
 
   test('uses the slower interval while no wallet window is open, but keeps checking', () => {

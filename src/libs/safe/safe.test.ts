@@ -824,6 +824,29 @@ describe('toCallsUserRequest', () => {
       { to: multiSendAddr, value: 0n, data }
     ])
   })
+
+  test('lower-cases the calldata of a queued transaction', () => {
+    const data = new Interface(['function transfer(address,uint256)']).encodeFunctionData(
+      'transfer',
+      [ZeroAddress, 0xabcdefn]
+    )
+
+    expect(getCalls({ data: `0x${data.slice(2).toUpperCase()}` })).toEqual([
+      { to: ZeroAddress, value: 0n, data }
+    ])
+  })
+
+  test('lower-cases the calldata of the calls in an upper-case multiSend batch', () => {
+    const innerData = new Interface(['function transfer(address,uint256)']).encodeFunctionData(
+      'transfer',
+      [RECIPIENT, 0xabcdefn]
+    )
+    const data = encodeMultiSend([{ to: RECIPIENT, value: 0n, data: innerData }])
+
+    expect(
+      getCalls({ to: multiSendAddr, operation: 1, data: `0x${data.slice(2).toUpperCase()}` })
+    ).toEqual([{ to: RECIPIENT, value: 0n, data: innerData }])
+  })
 })
 
 describe('doCallsMatchSafeTx', () => {

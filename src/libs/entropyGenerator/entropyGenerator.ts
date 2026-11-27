@@ -24,7 +24,7 @@ export class EntropyGenerator {
     const randomBytesGenerated = randomBytes(length)
     // Introduces additional entropy mixing via XOR
     for (let i = 0; i < length; i++) {
-      randomBytesGenerated[i] ^= hash[i % hash.length]
+      randomBytesGenerated[i]! ^= hash[i % hash.length]!
     }
 
     return randomBytesGenerated

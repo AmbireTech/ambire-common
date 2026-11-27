@@ -131,6 +131,42 @@ const fallbackCases: Array<{
     expected: [{ type: 'action', content: 'Swap' }]
   },
   {
+    label: 'has-to:has-value:has-data — no extra Send when the module already shows the value',
+    call: {
+      to: TO,
+      value: ETH,
+      data: DATA,
+      showsCallValue: true,
+      fullVisualization: [
+        { type: 'action', content: 'Send', id: 1 },
+        { type: 'token', address: ZERO, value: ETH, id: 2 }
+      ]
+    } as IrCall,
+    expected: [
+      { type: 'action', content: 'Send' },
+      { type: 'token', address: ZERO, value: ETH }
+    ]
+  },
+  {
+    label: 'has-to:has-value:has-data — Send ETH added before a module visualization',
+    call: {
+      to: TO,
+      value: ETH,
+      data: DATA,
+      fullVisualization: [
+        { type: 'action', content: 'Send', id: 1 },
+        { type: 'token', address: TO, value: 1n, id: 2 }
+      ]
+    } as IrCall,
+    expected: [
+      { type: 'action', content: 'Send' },
+      { type: 'token', address: ZERO, value: ETH },
+      { type: 'label', content: 'and' },
+      { type: 'action', content: 'Send' },
+      { type: 'token', address: TO, value: 1n }
+    ]
+  },
+  {
     // A more specific module may already have humanized an empty call, so preserve its result
     // instead of overwriting it with the generic "Empty call to" label below.
     label: 'has-to:no-value:no-data — existing fullVisualization preserved',

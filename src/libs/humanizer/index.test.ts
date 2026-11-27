@@ -4,10 +4,12 @@ import { encodeFunctionData } from 'viem'
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import {
   getTestErc7730Descriptors,
+  getTestErc7730Errors,
   getTestErc7730MessageDescriptor,
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../controllers/erc7730/testDescriptors'
@@ -16,7 +18,12 @@ import { Key } from '../../interfaces/keystore'
 import { CowSwapOrderStruct } from '../../interfaces/swapAndBridge'
 import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
-import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
+import {
+  EMPTY_ERC7730_KNOWN,
+  Erc7730CallDescriptors,
+  Erc7730Registry,
+  resolveErc7730Descriptors
+} from './erc7730'
 import { getSafeTxCallsFromMessage } from './erc7730/utils'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { HumanizerWarning } from './interfaces'
@@ -450,7 +457,26 @@ describe('TypedMessages', () => {
         verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
-      types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
+        PermitBatch: [
+          { name: 'details', type: 'PermitDetails[]' },
+          { name: 'spender', type: 'address' },
+          { name: 'sigDeadline', type: 'uint256' }
+        ],
+        PermitDetails: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint160' },
+          { name: 'expiration', type: 'uint48' },
+          { name: 'nonce', type: 'uint48' }
+        ]
+      },
       message,
       // primaryType must name a declared type - this message's only declared type is
       // PermitBatch, so that's the primaryType a real dapp would send
@@ -1898,49 +1924,32 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const fetchedDescriptorPaths: string[] = []
-    let indexFetchCount = 0
-    const callRelayer = async (path: string, _method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        indexFetchCount += 1
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${router.toLowerCase()}`]: routerPath,
-            [`eip155:1:${vault.toLowerCase()}`]: vaultPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        fetchedDescriptorPaths.push(body.descriptorPath)
-
-        if (body.descriptorPath === `/${routerPath}`) {
-          return {
-            success: true,
-            display: {
-              formats: {
-                'execute(address target, bytes data)': {
-                  intent: 'Run',
-                  fields: [
-                    {
-                      path: 'data',
-                      label: 'Call',
-                      format: 'calldata',
-                      params: { calleePath: 'target' },
-                      visible: 'always'
-                    }
-                  ]
-                }
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:1:${router.toLowerCase()}`]: routerPath,
+        [`eip155:1:${vault.toLowerCase()}`]: vaultPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [routerPath]: {
+          display: {
+            formats: {
+              'execute(address target, bytes data)': {
+                intent: 'Run',
+                fields: [
+                  {
+                    path: 'data',
+                    label: 'Call',
+                    format: 'calldata',
+                    params: { calleePath: 'target' },
+                    visible: 'always'
+                  }
+                ]
               }
             }
           }
-        }
-
-        return {
-          success: true,
+        },
+        [vaultPath]: {
           display: {
             formats: {
               'deposit(uint256 amount)': {
@@ -1951,21 +1960,17 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await getTestErc7730Descriptors(embeddedCallAccountOp, callRelayer)
+    const descriptors = await getTestErc7730Descriptors(embeddedCallAccountOp, registry)
     const irCalls = humanizeAccountOp(embeddedCallAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(routerPath)
-    // The descriptor of the embedded call is asked for only because the router descriptor declares
-    // it, and it is fetched in a later round of the same lookup - not once per call
+    // The descriptor of the embedded call is looked up only because the router descriptor declares
+    // it, in a later round of the same lookup
     expect(descriptors[0]?.nestedCallDescriptors?.[`eip155:1:${vault.toLowerCase()}`]?.path).toBe(
       vaultPath
     )
-    expect(indexFetchCount).toBe(1)
-    expect(fetchedDescriptorPaths.sort()).toEqual([`/${routerPath}`, `/${vaultPath}`])
 
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Run', [
@@ -2243,25 +2248,13 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${morphoBundler.toLowerCase()}`]: registryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:8453:${morphoBundler.toLowerCase()}`]: registryPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
@@ -2284,11 +2277,9 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await getTestErc7730Descriptors(morphoAccountOp, callRelayer)
+    const descriptors = await getTestErc7730Descriptors(morphoAccountOp, registry)
     const irCalls = humanizeAccountOp(morphoAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -2560,23 +2551,13 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${usdt}`]: registryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:1:${usdt}`]: registryPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'approve(address _spender, uint256 _value)': {
@@ -2601,11 +2582,9 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await getTestErc7730Descriptors(revokeApprovalAccountOp, callRelayer)
+    const descriptors = await getTestErc7730Descriptors(revokeApprovalAccountOp, registry)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -2721,23 +2700,13 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${WETH_ADDRESS}`]: wethRegistryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${wethRegistryPath}` })
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:1:${WETH_ADDRESS}`]: wethRegistryPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [wethRegistryPath]: {
           display: {
             formats: {
               'deposit()': {
@@ -2754,11 +2723,9 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await getTestErc7730Descriptors(transferAccountOp, callRelayer)
+    const descriptors = await getTestErc7730Descriptors(transferAccountOp, registry)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
@@ -2778,45 +2745,29 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('fetches the calldata descriptor index through the relayer', async () => {
+  test('uses the registry descriptor of the called contract and shows the value the call sends', async () => {
     const nativeValue = ethers.parseEther('0.00001')
     const call = {
       ...transactions.erc20[1]!,
       value: nativeValue
     }
-    const registryPath = 'registry/test/calldata-relayer-approval.json'
-    const relayerAccountOp: AccountOp = {
+    const registryPath = 'registry/test/calldata-approval.json'
+    const registryAccountOp: AccountOp = {
       ...accountOp,
       chainId: 1n,
       calls: [call]
     }
-    let relayerPath = ''
-    const descriptorPaths: string[] = []
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        relayerPath = path
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${call.to.toLowerCase()}`]: registryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-        descriptorPaths.push(body.descriptorPath)
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:1:${call.to.toLowerCase()}`]: registryPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'approve(address _spender, uint256 _value)': {
-                intent: 'Authorize via relayer',
+                intent: 'Authorize from the registry',
                 fields: [
                   {
                     path: '#._spender',
@@ -2837,18 +2788,14 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await getTestErc7730Descriptors(relayerAccountOp, callRelayer)
-    const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
+    const descriptors = await getTestErc7730Descriptors(registryAccountOp, registry)
+    const irCalls = humanizeAccountOp(registryAccountOp, { erc7730Descriptors: descriptors })
 
-    expect(relayerPath).toBe('/v2/erc7730/account-op')
-    expect(descriptorPaths).toEqual([`/${registryPath}`])
     expect(descriptors[0]?.path).toBe(registryPath)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
-      getErc7730Visualization('Authorize via relayer', [
+      getErc7730Visualization('Authorize from the registry', [
         {
           type: 'single-value',
           label: 'Spender',
@@ -2868,7 +2815,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('falls back to the built-in calldata descriptor when the relayer index fails', async () => {
+  test('falls back to the built-in calldata descriptor when the registry descriptor is missing', async () => {
     const { restore } = suppressConsole()
     const call = transactions.erc20[1]!
     const fallbackAccountOp: AccountOp = {
@@ -2876,14 +2823,19 @@ describe('ERC-7730 descriptors', () => {
       chainId: 1n,
       calls: [call]
     }
-    const callRelayer = async () => {
-      throw new Error('relayer down')
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:1:${call.to.toLowerCase()}`]: 'registry/test/missing.json'
+      },
+      eip712Index: {},
+      descriptors: {}
     }
 
     try {
-      const descriptors = await getTestErc7730Descriptors(fallbackAccountOp, callRelayer)
+      const descriptors = await getTestErc7730Descriptors(fallbackAccountOp, registry)
       expect(Object.keys(descriptors)).toEqual(['0'])
       expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
+      expect(getTestErc7730Errors(registry)).toHaveLength(1)
     } finally {
       restore()
     }
@@ -2921,37 +2873,23 @@ describe('ERC-7730 descriptors', () => {
       })
     }
     const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: descriptorPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${descriptorPath}` })
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:8453:${safeSingleton}`]: descriptorPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [descriptorPath]: {
           display: {
             formats: {}
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
     const descriptors = await getTestErc7730Descriptors(
       safeExecAccountOp,
-      callRelayer,
+      registry,
       provider as any
     )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
@@ -3031,23 +2969,13 @@ describe('ERC-7730 descriptors', () => {
       getStorage: jest.fn(async () => ethers.zeroPadValue(safeSingleton, 32))
     }
     const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
-    const callRelayer = async (path: string) => {
-      if (path === '/v2/erc7730/account-op') {
-        return {
-          success: true,
-          data: { [`eip155:8453:${safeSingleton}`]: descriptorPath },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        return { success: true, display: { formats: {} } }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    const registry: Erc7730Registry = {
+      calldataIndex: { [`eip155:8453:${safeSingleton}`]: descriptorPath },
+      eip712Index: {},
+      descriptors: { [descriptorPath]: { display: { formats: {} } } }
     }
 
-    const descriptors = await getTestErc7730Descriptors(safeExecAccountOp, callRelayer, provider)
+    const descriptors = await getTestErc7730Descriptors(safeExecAccountOp, registry, provider)
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
@@ -3127,37 +3055,23 @@ describe('ERC-7730 descriptors', () => {
       })
     }
     const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: descriptorPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${descriptorPath}` })
-
-        return {
-          success: true,
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:8453:${safeSingleton}`]: descriptorPath
+      },
+      eip712Index: {},
+      descriptors: {
+        [descriptorPath]: {
           display: {
             formats: {}
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
     const descriptors = await getTestErc7730Descriptors(
       safeExecAccountOp,
-      callRelayer,
+      registry,
       provider as any
     )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
@@ -3561,8 +3475,8 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('fetches the EIP-712 descriptor index through the relayer', async () => {
-    const registryPath = 'registry/test/eip712-relayer-permit.json'
+  test('finds the EIP-712 descriptor of a typed message by its contract and primary type', async () => {
+    const registryPath = 'registry/test/eip712-permit.json'
     const permitMessage = {
       fromRequestId: 1,
       accountAddr: accountOp.accountAddr,
@@ -3595,31 +3509,15 @@ describe('ERC-7730 descriptors', () => {
       signature: null,
       chainId: 1n
     }
-    let relayerPath = ''
-    const descriptorPaths: string[] = []
-    const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        relayerPath = path
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${WETH_ADDRESS}`]: {
-              Permit: [{ path: registryPath }]
-            }
-          },
-          errorState: []
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {
+        [`eip155:1:${WETH_ADDRESS}`]: {
+          Permit: [{ path: registryPath }]
         }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-        descriptorPaths.push(body.descriptorPath)
-
-        return {
-          success: true,
+      },
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
@@ -3645,14 +3543,10 @@ describe('ERC-7730 descriptors', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, registry)
 
-    expect(relayerPath).toBe('/v2/erc7730/eip-712')
-    expect(descriptorPaths).toEqual([`/${registryPath}`])
     expect(descriptor?.path).toBe(registryPath)
   })
 
@@ -3697,24 +3591,15 @@ describe('ERC-7730 descriptors', () => {
       signature: null,
       chainId: 1n
     }
-    const callRelayer = jest.fn(async (path: string, method?: string) => {
-      expect(path).toBe('/v2/erc7730/eip-712')
-      expect(method).toBe('GET')
-
-      return {
-        success: true,
-        data: {},
-        errorState: []
-      }
-    })
-
-    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(
+      permitMessage as any,
+      EMPTY_ERC7730_REGISTRY
+    )
     const irMessage = humanizeMessage(permitMessage as any, {
       erc7730Descriptor: descriptor || undefined
     })
 
     expect(descriptor?.path).toBe('built-in/erc2612-permit')
-    expect(callRelayer).toHaveBeenCalledTimes(1)
     expect(irMessage.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       intent: [expect.objectContaining({ content: 'Authorize spending of tokens' })],
@@ -3734,6 +3619,66 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+  })
+
+  test('shows the ERC-7730 descriptor when the typed message humanizer throws', async () => {
+    const moneriumEure = '0x39b8b6385416f4ca36a20319f70d28621895279d'
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        domain: {
+          name: 'Monerium EURe',
+          version: '1',
+          chainId: '0x1',
+          verifyingContract: moneriumEure
+        },
+        message: {
+          owner: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          spender: address2,
+          value: '1',
+          nonce: '0',
+          // `BigInt('not a number')` throws inside the Permit humanizer. The descriptor
+          // shows a value it cannot read as a date as text, so it does not throw
+          deadline: 'not a number'
+        },
+        primaryType: 'Permit'
+      },
+      signature: null,
+      chainId: 1n
+    }
+    const descriptor = await getTestErc7730MessageDescriptor(
+      permitMessage as any,
+      EMPTY_ERC7730_REGISTRY
+    )
+    const { restore } = suppressConsole()
+
+    try {
+      const irMessage = humanizeMessage(permitMessage as any, {
+        erc7730Descriptor: descriptor || undefined
+      })
+
+      expect(console.error).toHaveBeenCalledTimes(1)
+      expect(irMessage.fullVisualization?.[0]).toMatchObject({ type: 'erc7730' })
+    } finally {
+      restore()
+    }
   })
 
   test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
@@ -4449,81 +4394,50 @@ describe('ERC-7730 descriptors', () => {
       signature: null,
       chainId: 8453n
     }
-    const fetchedDescriptorPaths: string[] = []
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: {
-              SafeTx: [
+    const registry: Erc7730Registry = {
+      calldataIndex: {
+        [`eip155:8453:${safeSingleton}`]: calldataDescriptorPath
+      },
+      eip712Index: {
+        [`eip155:8453:${safeSingleton}`]: {
+          SafeTx: [
+            {
+              path: eip712DescriptorPath
+            }
+          ]
+        }
+      },
+      descriptors: {
+        [eip712DescriptorPath]: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
                 {
-                  path: eip712DescriptorPath
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
                 }
-              ]
-            }
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: calldataDescriptorPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        fetchedDescriptorPaths.push(body.descriptorPath)
-
-        if (body.descriptorPath === `/${eip712DescriptorPath}`) {
-          return {
-            success: true,
-            display: {
-              formats: {
-                'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
-                  {
-                    intent: 'Safe',
-                    fields: [
-                      { path: 'operation', label: 'Operation type' },
-                      {
-                        path: 'data',
-                        label: 'Transaction',
-                        format: 'calldata',
-                        params: { calleePath: '#.to' }
-                      },
-                      { path: 'safeTxGas', label: 'Gas amount' },
-                      { path: 'gasPrice', label: 'Gas price' },
-                      { path: 'gasToken', label: 'Gas token', format: 'addressName' },
-                      { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
-                    ]
-                  }
-              }
             }
           }
-        }
-
-        if (body.descriptorPath === `/${calldataDescriptorPath}`) {
-          return {
-            success: true,
-            display: {
-              formats: {}
-            }
+        },
+        [calldataDescriptorPath]: {
+          display: {
+            formats: {}
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    }
     const provider = {
       getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
@@ -4536,7 +4450,7 @@ describe('ERC-7730 descriptors', () => {
 
     const descriptor = await getTestErc7730MessageDescriptor(
       safeTxMessage as any,
-      callRelayer,
+      registry,
       provider as any
     )
     const irMessage = humanizeMessage(safeTxMessage as any, {
@@ -4545,10 +4459,6 @@ describe('ERC-7730 descriptors', () => {
 
     expect(descriptor?.path).toBe(eip712DescriptorPath)
     expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe(calldataDescriptorPath)
-    expect(fetchedDescriptorPaths).toEqual([
-      `/${eip712DescriptorPath}`,
-      `/${calldataDescriptorPath}`
-    ])
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
@@ -4864,8 +4774,8 @@ describe('ERC-7730 descriptors', () => {
   // now decodes `multiSend` batches itself (via `decodeMultiSend`, src/libs/safe/helpers.ts) and
   // recurses per leg, checking each leg's own `operation`, since the ERC-7730 pipeline's `Call`
   // type has no `operation` field and can't carry it (erc7730/utils.ts#getSafeTxCallsFromMessage,
-  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings humanizerTMModules found
-  // (which is where that recursive check runs, via safeMessageModule) into the ERC-7730 result
+  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings the message modules found
+  // (which is where that recursive check runs, via humanizeSafeTx) into the ERC-7730 result
   // instead of discarding them when an ERC-7730 descriptor resolves the message. This is the
   // exact "Attack B" pattern from the leaked safe-poc.html: a benign leg 0 plus a hidden
   // delegatecall leg 1 into attacker-controlled code that runs in the Safe's own storage context.

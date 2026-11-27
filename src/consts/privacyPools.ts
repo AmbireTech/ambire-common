@@ -1,6 +1,7 @@
 import { Hex } from '../interfaces/hex'
 import {
   PrivacyPoolsAsset,
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsChainConfig,
   PrivacyPoolsLeakId
 } from '../interfaces/privacyPools'
@@ -72,6 +73,11 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     blocksPerDay: 7200n,
     aspUrl: 'https://api.0xbow.io',
     sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
+    // Fast Relay first: it relays most withdrawals, so a send through it blends in best
+    relayers: {
+      'Fast Relay': 'https://fastrelay.xyz/relayer',
+      'Cloaked Relay': 'https://api.clkd.xyz/relayer'
+    },
     paymaster: {
       entryPointAddress: '0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108',
       paymasterAddress: '0xe06CB96C57D2442f8F60F5017354BC08F7e91308',
@@ -217,21 +223,28 @@ export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
 
+export const PRIVACY_POOLS_BROADCASTER_STORAGE_KEY = 'privacyPoolsBroadcaster'
+
+/**
+ * 0xBow's relayers: most transfers out of the pools go through them, so one more blends in best.
+ * Kohaku's paymaster has sent only a few so far.
+ */
+export const PRIVACY_POOLS_DEFAULT_BROADCASTER: PrivacyPoolsBroadcaster = '0xbow'
+
+/** Every broadcaster, to check a stored choice against. */
+export const PRIVACY_POOLS_BROADCASTERS: PrivacyPoolsBroadcaster[] = ['0xbow', 'kohaku']
+
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 
-/**
- * The plugin's storage key for a chain's history, mirrored as the SDK does not export it. Needed
- * before a plugin exists: to seed its starting state and tell whether the chain has history yet.
- */
-export const getPrivacyPoolsStoreKey = ({
-  chainId,
-  entrypointAddress
-}: PrivacyPoolsChainConfig): string =>
-  `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
-
 /** How many days back the deposits that hide a transfer are counted in what the user sees. */
 export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n
+
+/**
+ * Depositors checked for a Kohaku client fingerprint in one call. Their packed addresses stay under the
+ * 24 KB calldata limit of RPCs without state override, and the call far below the gas cap.
+ */
+export const PRIVACY_POOLS_FINGERPRINT_CHECK_BATCH_SIZE = 1000
 
 const ETH_UNIT = 10n ** 18n
 const USD_STABLECOIN_UNIT = 10n ** 6n
@@ -272,13 +285,6 @@ export const PRIVACY_POOLS_AMOUNT_LEAK_IDS: PrivacyPoolsLeakId[] = [
   'fresh-deposit'
 ]
 
-/**
- * Shown when a transfer's privacy is `unchecked`, as the pool's deposits are not read yet. In
- * English, to translate as it is.
- */
-export const PRIVACY_POOLS_UNCHECKED_PRIVACY_TEXT =
-  "We are unable to check this transfer's privacy yet. Please wait a few seconds and try again."
-
 /** Whether the address is the wallet's native token address (`ZERO_ADDRESS`). */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
   address.toLowerCase() === ZERO_ADDRESS
@@ -289,6 +295,16 @@ export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
  */
 export const getPrivacyPoolsTokenId = (chainId: string, tokenAddress: string): string =>
   `${chainId}:${tokenAddress.toLowerCase()}`
+
+/**
+ * A deposit of a token as the Send form picks it: the token's id with the deposit's number - see
+ * `PrivacyPoolsSendableDeposit.number`.
+ */
+export const getPrivacyPoolsDepositId = (
+  chainId: string,
+  tokenAddress: string,
+  depositNumber: number
+): string => `${getPrivacyPoolsTokenId(chainId, tokenAddress)}:${depositNumber}`
 
 /** Looks up a configured asset (see `PrivacyPoolsAsset`) by the wallet's address for it. */
 export const getPrivacyPoolsAsset = (

@@ -11,6 +11,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { UserRequest } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -62,6 +63,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     estimateController: EstimationController
     gasPriceController: GasPriceController
     phishing: IPhishingController
+    privacyPools: IPrivacyPoolsController
   }) {
     super(props)
 

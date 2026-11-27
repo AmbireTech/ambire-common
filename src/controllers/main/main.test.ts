@@ -10,8 +10,8 @@ import {
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
-import { SignMessageStatus } from '@/interfaces/signMessage'
 import { Hex } from '@/interfaces/hex'
+import { SignMessageStatus } from '@/interfaces/signMessage'
 import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { isSmartAccount } from '@/libs/account/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
@@ -165,6 +165,48 @@ describe('Main Controller ', () => {
     await mainCtrl.handleSignMessage()
 
     expect(signSpy).not.toHaveBeenCalled()
+  })
+
+  describe('portfolio update after the auto discovery setting changes', () => {
+    test('marks every account as outdated and updates the portfolio right away when the setting is turned off and on', async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.featureFlags.initialLoadPromise
+      const updateSpy = jest
+        .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
+        .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
+
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+
+      expect(markAsOutdatedSpy).toHaveBeenCalledTimes(2)
+      // `defiMaxDataAgeMs: 0`, as an update that was already running can save its data as fresh
+      // again after it was marked as outdated
+      expect(updateSpy.mock.calls).toEqual([[{ defiMaxDataAgeMs: 0 }], [{ defiMaxDataAgeMs: 0 }]])
+    })
+
+    test('does not update the portfolio when another setting changes', async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.featureFlags.initialLoadPromise
+      const updateSpy = jest
+        .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
+        .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
+
+      await mainCtrl.featureFlags.setFeatureFlag('gasTank', false)
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+
+      expect(markAsOutdatedSpy).not.toHaveBeenCalled()
+      expect(updateSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe('portfolio update after a signed message', () => {
@@ -337,11 +379,13 @@ describe('Main Controller ', () => {
         '137': { isDeployed: true, threshold: 1, nonce: 0n }
       } as any)
     const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
-    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(async () => {
-      // the wallet gets locked while the first chain is fetched
-      isUnlockedSpy.mockReturnValue(false)
-      return null
-    })
+    const fetchPendingSpy = jest
+      .spyOn(controller.safe, 'fetchPending')
+      .mockImplementation(async () => {
+        // the wallet gets locked while the first chain is fetched
+        isUnlockedSpy.mockReturnValue(false)
+        return null
+      })
 
     try {
       await controller.fetchSafeTxns([], true)
@@ -364,7 +408,9 @@ describe('Main Controller ', () => {
     } as any
     const getAccountStatesSpy = jest.spyOn(controller.accounts, 'getOrFetchAccountStates')
     const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
-    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(false)
+    const isUnlockedSpy = jest
+      .spyOn(controller.keystore, 'isUnlocked', 'get')
+      .mockReturnValue(false)
 
     try {
       // a forced refetch, like the dashboard refresh, does not get past the lock either
@@ -652,6 +698,34 @@ describe('Main Controller ', () => {
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
     })
 
+    test('marks the picker as running on a new recovery phrase until it is reset', async () => {
+      const { picker } = await prepareNewSeedFlow()
+
+      await picker.init()
+      expect(picker.isFromNewSeed).toBe(true)
+
+      await picker.reset()
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
+    test('does not mark an entered recovery phrase as new', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.reset()
+      await mainCtrl.keystore.addTempSeed({
+        seed: process.env.SEED!,
+        seedPassphrase: null,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await picker.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await picker.init()
+
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
     test('adds the prepared account, its key and the new recovery phrase on proceeding', async () => {
       const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
       const before = snapshot()
@@ -730,6 +804,102 @@ describe('Main Controller ', () => {
       expect(snapshot().keys).toEqual(before.keys)
     })
 
+    test('keeps the name of an account the wallet has already, unless a sync overrides it', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const withOtherName = {
+        ...walletAccount!,
+        preferences: { ...walletAccount!.preferences, label: 'Other name' }
+      }
+
+      await picker.prepareAccounts({ accounts: [withOtherName] })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe(walletAccount!.preferences.label)
+
+      await picker.prepareAccounts({ accounts: [withOtherName], shouldOverridePreferences: true })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe('Other name')
+      await picker.addPreparedAccounts()
+      expect(mainCtrl.accounts.accounts[0]!.preferences.label).toBe('Other name')
+    })
+
+    test('tells the accounts the wallet has that come with a key it does not hold', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const keyAddr = walletAccount!.associatedKeys[0]!
+      const newWallet = Wallet.createRandom()
+      const notInWallet = {
+        addr: newWallet.address,
+        associatedKeys: [newWallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'New', pfp: newWallet.address }
+      }
+      const internalKey = {
+        addr: keyAddr,
+        type: 'internal' as const,
+        label: 'Key 1',
+        privateKey: Wallet.createRandom().privateKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: Date.now() }
+      }
+
+      // A new account is added, not updated, whatever keys it brings
+      await picker.prepareAccounts({
+        accounts: [walletAccount!, notInWallet],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      await picker.addPreparedAccounts()
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // The same key again brings nothing new
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // A key of another type for the same address is another way to sign
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: {
+          internal: [],
+          external: [
+            {
+              addr: keyAddr,
+              type: 'ledger',
+              label: 'Ledger Key 1',
+              dedicatedToOneSA: false,
+              meta: {
+                deviceId: '1',
+                deviceModel: 'nanoX',
+                hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+                index: 0,
+                createdAt: Date.now()
+              }
+            }
+          ]
+        }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      // Without keys (view-only) there is nothing to update
+      await picker.prepareAccounts({ accounts: [walletAccount!] })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+    })
+
+    test('tells a selected account the wallet has view-only as getting a key', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [derived] = picker.readyToAddAccounts
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      await mainCtrl.accounts.addAccounts([derived!])
+      picker.prepareSelectedAccounts()
+
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([derived!.addr])
+    })
+
     test('adds the key of the prepared account after another derivation path was browsed', async () => {
       const { mainCtrl, picker } = await prepareNewSeedFlow()
       await picker.init()
@@ -803,6 +973,60 @@ describe('Main Controller ', () => {
       await enterPhrase()
 
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
+    })
+
+    test('drops the prepared accounts, keys and recovery phrases on lock', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      const wallet = Wallet.createRandom()
+      const syncedSeedId = 'synced-seed-id'
+      const syncedAccount = {
+        addr: wallet.address,
+        associatedKeys: [wallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Synced', pfp: wallet.address }
+      }
+      await picker.prepareAccounts({
+        accounts: [syncedAccount],
+        keys: {
+          internal: [
+            {
+              addr: wallet.address,
+              type: 'internal',
+              label: 'Synced key',
+              privateKey: wallet.privateKey,
+              dedicatedToOneSA: false,
+              meta: { createdAt: Date.now(), fromSeedId: syncedSeedId }
+            }
+          ],
+          external: []
+        },
+        seeds: [
+          {
+            id: syncedSeedId,
+            seed: wallet.mnemonic!.phrase,
+            hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+          }
+        ]
+      })
+      expect(picker.readyToAddAccounts).toEqual([syncedAccount])
+
+      const isReset = new Promise<void>((resolve) => {
+        const unsubscribe = picker.onUpdate(() => {
+          if (picker.readyToAddAccounts.length) return
+          unsubscribe()
+          resolve()
+        })
+      })
+      mainCtrl.lock()
+      await isReset
+
+      expect(picker.isInitialized).toBe(false)
+      // Proceeding after unlocking adds nothing from before the lock
+      await mainCtrl.keystore.unlockWithSecret('password', '12345678')
+      await picker.addPreparedAccounts()
+      expect(snapshot()).toEqual(before)
     })
 
     test('never sends the private keys of the prepared accounts to the UI', async () => {
@@ -1120,6 +1344,75 @@ describe('Main Controller ', () => {
       expect(emittedErrors).toHaveLength(1)
       expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
       restore()
+    })
+  })
+
+  describe('deleteKey', () => {
+    const wallet = Wallet.createRandom()
+    const otherAddr = '0x1111111111111111111111111111111111111111'
+    const getAccount = (addr: string, associatedKeys: string[]) => ({
+      addr,
+      associatedKeys,
+      initialPrivileges: [],
+      creation: accounts[0]!.creation,
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    const makeWithKey = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [
+          getAccount(wallet.address, [wallet.address]),
+          getAccount(otherAddr, [otherAddr])
+        ])
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', 'password', '', true)
+      await mainCtrl.keystore.addKeys([
+        {
+          addr: wallet.address,
+          label: 'Key 1',
+          type: 'internal',
+          privateKey: wallet.privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }
+      ])
+      const [key] = mainCtrl.keystore.keys
+      // Only the account that counted the key has it in its state
+      mainCtrl.accounts.accountStates = {
+        [wallet.address]: { '1': { importedAccountKeys: [key] } as unknown as AccountOnchainState }
+      }
+      const updateAccountState = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      return { mainCtrl, updateAccountState, sendUiMessage }
+    }
+
+    test('removes the key, replies to the UI and reloads only the accounts that had it', async () => {
+      const { mainCtrl, updateAccountState, sendUiMessage } = await makeWithKey()
+
+      const isRemoved = await mainCtrl.deleteKey(wallet.address, 'internal', 'request-1')
+
+      expect(isRemoved).toBe(true)
+      expect(mainCtrl.keystore.keys).toHaveLength(0)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true, res: true })
+      expect(updateAccountState).toHaveBeenCalledTimes(1)
+      expect(updateAccountState).toHaveBeenCalledWith(wallet.address, 'latest', [], true)
+    })
+
+    test('replies false and reloads nothing when the key does not exist', async () => {
+      const { mainCtrl, updateAccountState, sendUiMessage } = await makeWithKey()
+      const { restore } = suppressConsole()
+
+      const isRemoved = await mainCtrl.deleteKey(otherAddr, 'internal', 'request-2')
+      restore()
+
+      expect(isRemoved).toBe(false)
+      expect(mainCtrl.keystore.keys).toHaveLength(1)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-2', ok: true, res: false })
+      expect(updateAccountState).not.toHaveBeenCalled()
     })
   })
 

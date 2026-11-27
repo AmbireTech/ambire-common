@@ -161,7 +161,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
 - **DomainsController** – Resolves and caches names (and avatars/expiry) for addresses across name services (ENS, Namoshi and more)
-- **Erc7730Controller** – Owns the ERC-7730 "clear signing" descriptor cache (relayer indexes + descriptor JSON), persisting it so descriptors survive a service worker restart.
+- **Erc7730Controller** – Looks up ERC-7730 "clear signing" descriptors in the registry bundled with the app (`consts/erc7730`, refreshed with `npm run humanizer:update:erc7730Registry`) and reads which contract a Safe proxy delegates to; never fetches descriptors.
 - **EmailVaultController** – Handles email-based recovery, magic-link flows, and vault secret management.
 - **FeatureFlagsController** – Toggles application features at runtime for roll-outs and A/B testing.
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
@@ -173,7 +173,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
-- **PrivacyPoolsController** – Manages Privacy Pools (0xBow) accounts, at most one per recovery phrase, and their shielded notes: syncs pools (on opening the account, with each portfolio update while a view is open, and once after each deposit, withdrawal or ragequit), reports approved/pending balances and the account's history, and builds deposit, withdrawal and ragequit (public reclaim of a pending deposit) operations.
+- **PrivacyPoolsController** – Manages Privacy Pools (0xBow) accounts, at most one per recovery phrase, and their shielded notes: syncs pools (on opening the account, with each portfolio update while a view is open, and once after each deposit, withdrawal or ragequit), reports approved/pending balances and the account's history, and builds deposit, withdrawal (through 0xBow's relayers or Kohaku's paymaster, as the user chooses) and ragequit (public reclaim of a pending deposit) operations.
 - **WalletTokenController** – Loads each account's pending $WALLET withdrawals (from the relayer's leave logs, or, when the user opts out, from local and user-entered transactions) and stores them as leave logs.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
@@ -185,7 +185,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **SwapAndBridgeController** – Manages swap and bridge quotes, routes, and active cross-chain transactions.
 - **TransferController** – Builds and validates simple token-transfer transactions.
 - **UiController** – Manages UI windows, popups, and view stacks.
-- **TokenPricesController** – The only place that requests token prices from cena: keeps one cache with a fetch time per token, shared by every account and feature, and requests only the tokens missing from it.
+- **TokenPricesController** – The only place that requests token prices: from cena, or from the network's RPC alone (`libs/tokenPrices/rpcTokenPrices.ts`) when the user opted out of the price API. Keeps one cache with a fetch time per token, shared by every account and feature, and requests only the tokens missing from it.
 - **TransfersScannerController** – Scans blockchain logs for incoming token transfers to user accounts.
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)

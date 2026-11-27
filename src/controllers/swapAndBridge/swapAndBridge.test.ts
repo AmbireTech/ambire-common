@@ -9,7 +9,7 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
+import { EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -36,6 +36,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
+import { PrivacyPoolsController } from '../privacyPools/privacyPools'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SafeController } from '../safe/safe'
@@ -237,10 +238,7 @@ const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, sel
 const callRelayer = relayerCall.bind({ url: '', fetch })
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
 const erc7730Ctrl = new Erc7730Controller({
-  storage: storageCtrl,
-  // callRelayer isn't bound, so every descriptor lookup would fail and log an error
-  callRelayer: noErc7730DescriptorsRelayer,
-  featureFlags: featureFlagsCtrl,
+  registry: EMPTY_ERC7730_REGISTRY,
   providers: providersCtrl,
   ui: uiCtrl
 })
@@ -249,6 +247,11 @@ const contractInfoCtrl = new ContractInfoController({
   storage: storageCtrl,
   featureFlags: featureFlagsCtrl,
   ui: uiCtrl
+})
+
+const tokenPricesCtrl = new TokenPricesController({
+  fetch,
+  isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
 })
 
 const portfolioCtrl = new PortfolioController(
@@ -263,18 +266,31 @@ const portfolioCtrl = new PortfolioController(
   bannerCtrl,
   featureFlagsCtrl,
   uiCtrl,
-  new TokenPricesController({
-    fetch,
-    isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
-  })
+  tokenPricesCtrl
 )
+
+const privacyPoolsCtrl = new PrivacyPoolsController({
+  keystore,
+  featureFlags: featureFlagsCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl,
+  selectedAccount: selectedAccountCtrl,
+  storage: storageCtrl,
+  ui: uiCtrl,
+  fetch,
+  circuitsBaseUrl: '',
+  onAccountsRemoved: () => Promise.resolve(),
+  getPendingAccountOps: () => [],
+  tokenPrices: tokenPricesCtrl
+})
 
 const safe = new SafeController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore
+  keystore,
+  featureFlags: featureFlagsCtrl
 })
 
 const activityCtrl = new ActivityController(
@@ -367,6 +383,7 @@ const buildSwapAndBridgeController = (
     swapProvider: socketAPIMock as any,
     erc7730: erc7730Ctrl,
     contractInfo: contractInfoCtrl,
+    privacyPools: privacyPoolsCtrl,
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -413,7 +430,8 @@ const transferCtrl = new TransferController(
   uiCtrl,
   erc7730Ctrl,
   contractInfoCtrl,
-  'browser-webkit'
+  'browser-webkit',
+  privacyPoolsCtrl
 )
 
 requestsCtrl = new RequestsController({
@@ -445,7 +463,8 @@ requestsCtrl = new RequestsController({
   addTokensToBeLearned: () => {},
   onSetCurrentUserRequest: () => {},
   onBroadcastSuccess: async () => {},
-  onBroadcastFailed: () => {}
+  onBroadcastFailed: () => {},
+  privacyPools: privacyPoolsCtrl
 })
 
 describe('SwapAndBridge Controller', () => {
@@ -647,22 +666,47 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
-  test('should only require portfolio token prices when token prices are enabled', async () => {
+  test('should list the portfolio tokens without a price, whatever the price source', async () => {
     const controller = buildSwapAndBridgeController()
+    // On OP Mainnet, where the RPC can price every token
     const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+    // The "from" token is picked only on the networks the swap provider supports, which a new
+    // controller fetches in the background, announcing them with an update
+    await new Promise<void>((resolve) => {
+      if (controller.supportedChainIds.length) {
+        resolve()
+        return
+      }
+
+      const unsubscribe = controller.onUpdate(() => {
+        if (!controller.supportedChainIds.length) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
 
     try {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
-      expect(controller.portfolioTokenList).toEqual([])
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+      expect(controller.fromSelectedToken).not.toBeNull()
 
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
       expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
-      expect(controller.fromSelectedToken).not.toBeNull()
+
+      // Prices only from the network and no auto discovery: the dashboard collapses these into
+      // the "Other" tokens, but a legit token may just not be priced, so it stays selectable
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
     } finally {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
     }
   })
   test('should expose the wrap exemption before a quote is available', () => {
@@ -2622,6 +2666,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       swapProvider: socketAPIMock as any,
       erc7730: erc7730Ctrl,
       contractInfo: contractInfoCtrl,
+      privacyPools: privacyPoolsCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,

@@ -1,0 +1,335 @@
+{
+  "src/classes/ProviderError.test.ts": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 1
+    }
+  },
+  "src/controllers/accountPicker/accountPicker.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/accounts/accounts.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/controllers/activity/activity.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 2
+    }
+  },
+  "src/controllers/autoLogin/autoLogin.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 5
+    }
+  },
+  "src/controllers/emailVault/emailVault.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/controllers/eventEmitter/eventEmitter.test.ts": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 4
+    }
+  },
+  "src/controllers/eventEmitter/eventEmitter.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/controllers/keystore/keystore.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/main/main.test.ts": {
+    "@typescript-eslint/no-non-null-asserted-optional-chain": {
+      "count": 1
+    }
+  },
+  "src/controllers/networks/networks.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/controllers/providers/providers.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/signAccountOp/helper.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/storage/storage.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/survey/survey.test.ts": {
+    "@typescript-eslint/no-non-null-asserted-optional-chain": {
+      "count": 19
+    }
+  },
+  "src/controllers/survey/survey.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/controllers/swapAndBridge/swapAndBridge.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/controllers/swapAndBridge/swapAndBridge.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 3
+    }
+  },
+  "src/controllers/transaction/dependencies.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/controllers/transaction/transactionFormState.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/interfaces/swapAndBridge.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "src/interfaces/ui.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "src/libs/accountOp/hyperEvmBalanceChanges.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/accountOp/submittedAccountOp.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/libs/accountPicker/accountPicker.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/libs/deployless/compile.ts": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 1
+    }
+  },
+  "src/libs/dkim/getPublicKey.ts": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/dkim/parse.ts": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 3
+    }
+  },
+  "src/libs/dkim/publicKeyToComponents.ts": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 1
+    }
+  },
+  "src/libs/emailVault/emailVault.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 6
+    }
+  },
+  "src/libs/emailVault/emailVault.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/libs/errorHumanizer/helpers.test.ts": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 2
+    }
+  },
+  "src/libs/estimate/estimate.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/estimate/estimateBundler.test.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/libs/humanizer/erc7730/fetch.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "src/libs/humanizer/humanizerModules.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/libs/humanizer/messageModules/openseaModule.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/humanizer/messageModules/zealyModule.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/humanizer/modules/AsciiModule/asciiModule.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/libs/humanizer/modules/AsciiModule/asciiModule.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/libs/humanizer/modules/GasTankModule/gasTankModule.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/humanizer/modules/SingletonFactory/singletonFactory.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/keyIterator/keyIterator.test.ts": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 3
+    }
+  },
+  "src/libs/paymaster/paymaster.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 4
+    }
+  },
+  "src/libs/polling/polling.test.ts": {
+    "@typescript-eslint/no-throw-literal": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/polling/polling.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 3
+    }
+  },
+  "src/libs/portfolio/helpers.test.ts": {
+    "@typescript-eslint/no-non-null-asserted-optional-chain": {
+      "count": 8
+    }
+  },
+  "src/libs/portfolio/helpers.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/portfolio/pagination.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "src/libs/portfolio/tokenProcessing.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/libs/relayerCall/relayerCall.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/libs/richJson/richJson.ts": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 2
+    }
+  },
+  "src/libs/tracer/accessListCall.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/libs/userOperation/userOperation.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/services/bundlers/DevBundlerSwitcher.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  },
+  "src/services/bundlers/bundler.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/services/bundlers/bundlerSwitcher.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 2
+    }
+  },
+  "src/services/bundlers/pimlico.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/services/lifi/api.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/services/paymaster/PaymasterFactory.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 2
+    }
+  },
+  "src/services/storage/activityIdb.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 10
+    }
+  },
+  "src/utils/batcher.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 3
+    }
+  },
+  "src/utils/fetch.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    }
+  }
+}

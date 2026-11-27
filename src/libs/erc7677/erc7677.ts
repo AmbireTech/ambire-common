@@ -45,6 +45,7 @@ export function getPaymasterService(
   if (!foundChainId) return undefined
 
   const paymasterService = capabilities.paymasterService[foundChainId]
+  if (!paymasterService) return undefined
   paymasterService.id = generateUuid()
   return paymasterService
 }

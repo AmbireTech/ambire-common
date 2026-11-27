@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import {
+  MerkleTreeBuilder,
   OxBowAspService,
   PrivacyPoolsV1Protocol,
   SignatureSecretManager
@@ -9,11 +10,8 @@ import type { Host, Keystore } from '@kohaku-eth/plugins'
 
 import {
   getPrivacyPoolsBundlerUrl,
-  getPrivacyPoolsChainConfig,
-  getPrivacyPoolsStoreKey,
   PRIVACY_POOLS_ACCOUNT_INDEX,
-  PRIVACY_POOLS_READ_TIMEOUT,
-  PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
+  PRIVACY_POOLS_READ_TIMEOUT
 } from '../../consts/privacyPools'
 import { PrivacyPoolsChainConfig } from '../../interfaces/privacyPools'
 import {
@@ -23,6 +21,7 @@ import {
 } from '../../libs/kohaku/host'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
+import { getPrivacyPoolsChainStateKey } from '../../libs/privacyPools/storeKeys'
 import {
   getChainConfig,
   getChainProvider,
@@ -42,30 +41,11 @@ type ProtocolEntry = {
   protocol: PrivacyPoolsV1Protocol
   /** The provider it was built against, so a provider swap can invalidate it. */
   provider: JsonRpcProvider
-  /** The chain version its in-memory state matches. See `#chainVersions`. */
-  chainVersion: number
   /** Whether it reads pool history from the CDN. See `markChainSynced`. */
   isSagaHydrated: boolean
 }
 
 const toEntryKey = (chainId: string, seedId: string) => `${chainId}:${seedId}`
-
-/**
- * Starts a cold chain's entrypoint walk at its deployment block instead of block zero (22M blocks
- * of `eth_getLogs` before the first event). Pools are left empty, so they are read in full.
- */
-const resolveInitialState = async (): Promise<Record<string, any>> =>
-  PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
-    const config = getPrivacyPoolsChainConfig(chainId)
-    if (!config) return state
-
-    return {
-      ...state,
-      [getPrivacyPoolsStoreKey(config)]: {
-        sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` }
-      }
-    }
-  }, {})
 
 /** The Privacy Pools plugins, one per chain and recovery phrase, and what they are built from. */
 export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
@@ -73,40 +53,41 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
 
   #proverFactory: PrivacyPoolsProverFactory
 
+  /** Absent, the SDK's own builder. One for all plugins, as the SDK caches its trees per builder. */
+  #merkleTreeBuilder?: MerkleTreeBuilder
+
   /** Per `${chainId}:${seedId}`. */
   #entries = new Map<string, ProtocolEntry>()
 
   /** Per phrase, outliving its plugins, so a rebuilt plugin skips re-deriving keys (pbkdf2). */
   #kohakuKeystores = new Map<string, Keystore>()
 
-  /**
-   * Bumped whenever a sync persists a chain's history. A plugin reads the store only when built, so
-   * an older one would re-read blocks another phrase's sync already read. See `getProtocol`. Kept
-   * through a lock: none of it comes from a phrase.
-   */
-  #chainVersions = new Map<string, number>()
-
-  constructor(ctx: PrivacyPoolsContext, proverFactory: PrivacyPoolsProverFactory) {
+  constructor(
+    ctx: PrivacyPoolsContext,
+    proverFactory: PrivacyPoolsProverFactory,
+    merkleTreeBuilder?: MerkleTreeBuilder
+  ) {
     this.#ctx = ctx
     this.#proverFactory = proverFactory
+    this.#merkleTreeBuilder = merkleTreeBuilder
   }
 
   getHost(chainId: string, seedId: string): Host {
-    return this.#createHost(getChainProvider(this.#ctx.providers, chainId), seedId)
+    return this.#createHost(chainId, getChainProvider(this.#ctx.providers, chainId), seedId)
   }
 
-  /** Rebuilt when another phrase's sync persisted newer history since, to start from that. */
+  /**
+   * Kept when another phrase syncs the chain: the plugins share the chain's state, so that sync
+   * updates it for this one too.
+   */
   async getProtocol(chainId: string, seedId: string): Promise<PrivacyPoolsV1Protocol> {
     const key = toEntryKey(chainId, seedId)
-    const chainVersion = this.#chainVersions.get(chainId) || 0
     const existing = this.#entries.get(key)
-
-    if (existing?.chainVersion === chainVersion) return existing.protocol
-    if (existing) this.#entries.delete(key)
+    if (existing) return existing.protocol
 
     const config = getChainConfig(chainId)
     const provider = getChainProvider(this.#ctx.providers, chainId)
-    const host = this.#createHost(provider, seedId)
+    const host = this.#createHost(chainId, provider, seedId)
     const { dataService, isSagaHydrated } = await this.#getDataService(config, host.provider)
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
@@ -114,18 +95,24 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
       // Pinned rather than the SDK's default: the schemes derive different notes, so a default that
       // changes in a bump would hide every note made before it
       secretManager: SignatureSecretManager,
-      // Skipped once this chain has a persisted store
-      initialState: resolveInitialState,
+      // The same object for every plugin, so the phrases share one copy of the chain's state. Safe
+      // to share, as the SDK requires, since every phrase reads the chain through the same provider.
+      chainStorage: this.#ctx.chainStorage,
       dataService,
+      // No `initialState`: the SDK starts a chain with nothing stored at `deploymentBlock` itself,
+      // instead of block zero (22M blocks of `eth_getLogs` before the first event)
       entrypoint: {
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
       },
       // The SDK types it as the circuits package's whole `Prover`, but only ever calls `prove`
       proverFactory: this.#proverFactory as SdkProverFactory,
+      merkleTreeBuilder: this.#merkleTreeBuilder,
       // Not the SDK's IPFS default, which needs ipfs.io up and the last root update's CID pinned
       aspServiceFactory: () =>
         new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
+      // Empty without relayers, so the SDK refuses a relayed withdrawal rather than guess one
+      relayersList: config.relayers ?? {},
       // Not the SDK's built-in table: withdrawals are built with the adapters
       // `readPaymasterWithdrawal` checks, and reach the bundler with our key. Empty without a
       // paymaster, so the SDK refuses rather than falls back to its table.
@@ -141,7 +128,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
         : {}
     })
 
-    this.#entries.set(key, { chainId, seedId, protocol, provider, chainVersion, isSagaHydrated })
+    this.#entries.set(key, { chainId, seedId, protocol, provider, isSagaHydrated })
 
     return protocol
   }
@@ -150,7 +137,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
   async isChainCold(config: PrivacyPoolsChainConfig): Promise<boolean> {
     try {
       // The shared adapter, not the raw store, so another phrase's in-flight save counts
-      return !(await this.#ctx.kohakuStorage.get(getPrivacyPoolsStoreKey(config)))
+      return !(await this.#ctx.chainStorage.get(getPrivacyPoolsChainStateKey(config)))
     } catch {
       // Treated as cold: reading from the CDN is the cheaper way to be wrong
       return true
@@ -158,19 +145,11 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
   }
 
   /**
-   * After a sync persisted the chain's history: other phrases' plugins on the chain are now behind
-   * the store, while this one is at it. Also drops the plugins that hydrated the chain from the
-   * CDN, whose reader would re-download the whole history on every sync. Their replacements start
-   * from the persisted store.
+   * After a sync stored the chain's state: drops the plugins that hydrated the chain from the CDN,
+   * whose reader would re-download the whole history on every sync. Their replacements read only
+   * the new blocks, from the provider.
    */
-  markChainSynced(chainId: string, seedId: string) {
-    const chainVersion = (this.#chainVersions.get(chainId) || 0) + 1
-    this.#chainVersions.set(chainId, chainVersion)
-
-    const key = toEntryKey(chainId, seedId)
-    const syncedEntry = this.#entries.get(key)
-    if (syncedEntry) this.#entries.set(key, { ...syncedEntry, chainVersion })
-
+  markChainSynced(chainId: string) {
     this.#dropWhere((entry) => entry.chainId === chainId && entry.isSagaHydrated)
   }
 
@@ -193,10 +172,18 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
     this.#kohakuKeystores.clear()
   }
 
-  #createHost(provider: JsonRpcProvider, seedId: string): Host {
+  #createHost(chainId: string, provider: JsonRpcProvider, seedId: string): Host {
+    // The SDK asks every relayer for a quote at once and waits for all of them, so one that never
+    // answers would hold the transfer forever. Only asking, so safe to give up on
+    const relayerQuoteUrls = Object.values(getChainConfig(chainId).relayers ?? {}).map(
+      (relayerUrl) => `${relayerUrl}/quote`
+    )
+
     return {
-      network: createKohakuNetwork(this.#ctx.fetch, PRIVACY_POOLS_READ_TIMEOUT),
-      storage: this.#ctx.kohakuStorage,
+      network: createKohakuNetwork(this.#ctx.fetch, PRIVACY_POOLS_READ_TIMEOUT, relayerQuoteUrls),
+      // Required by `Host`, but not read: the SDK stores nothing per account, and the chain's
+      // state in `chainStorage`
+      storage: this.#ctx.chainStorage,
       keystore: this.#getKohakuKeystore(seedId),
       provider: createKohakuProvider(provider)
     }

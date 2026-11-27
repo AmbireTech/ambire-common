@@ -44,6 +44,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
@@ -79,7 +80,6 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -508,6 +508,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #contractInfo: IContractInfoController
 
+  #privacyPools: IPrivacyPoolsController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -595,6 +597,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     dapps,
     erc7730,
     contractInfo,
+    privacyPools,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -623,6 +626,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     dapps: IDappsController
     erc7730: IErc7730Controller
     contractInfo: IContractInfoController
+    privacyPools: IPrivacyPoolsController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -655,6 +659,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#contractInfo = contractInfo
+    this.#privacyPools = privacyPools
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -1664,21 +1669,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#requestedToToken = null
     }
 
-    // When price fetching is disabled or the endpoint is down, tokens come back without
-    // a USD price. We must not exclude them as "priceless" in that case, otherwise
-    // switching to an account with such tokens would wrongly hide them. Skip the price
-    // requirement entirely when disabled and for chains with a current price fetch error.
-    const chainIdsWithPriceError = new Set<string>()
-    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
-      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
-    priceError?.networkNames.forEach((networkName) => {
-      const network = this.#networks.networks.find((n) => n.name === networkName)
-      if (network) chainIdsWithPriceError.add(network.chainId.toString())
-    })
-
-    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
-
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1687,11 +1677,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(
-            token,
-            true,
-            areTokenPricesEnabled && !chainIdsWithPriceError.has(token.chainId.toString())
-          ) && !token.flags.isHidden
+          // Tokens without a USD price stay in the list: a legit token may just not be priced
+          // (e.g. when prices come from the network alone), and the swap providers decide whether
+          // it can be swapped or bridged.
+          getIsTokenEligibleForSwapAndBridge(token, true) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
@@ -3889,6 +3878,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

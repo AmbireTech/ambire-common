@@ -69,8 +69,8 @@ describe('getUserOpDelegator', () => {
     expect(
       getUserOpDelegator({ delegatedContract: null, chainId, accountKeys: internalKeys })
     ).toBe(EIP_7702_AMBIRE_ACCOUNT)
-    expect(
-      getUserOpDelegator({ delegatedContract: null, chainId, accountKeys: latticeKeys })
-    ).toBe(EIP_7702_GRID_PLUS)
+    expect(getUserOpDelegator({ delegatedContract: null, chainId, accountKeys: latticeKeys })).toBe(
+      EIP_7702_GRID_PLUS
+    )
   })
 })

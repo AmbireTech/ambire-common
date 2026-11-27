@@ -8,49 +8,54 @@ import {
   humanizeCallWithErc7730,
   humanizeMessageWithErc7730
 } from './erc7730'
-import { IrCall, IrMessage } from './interfaces'
+import { HumanizerMessageResult, IrCall, IrMessage } from './interfaces'
 import {
-  cowSwapModule,
   eip7702AuthorizationModule,
-  ensMessageModule,
-  entryPointModule,
-  erc20Module,
-  erc721Module,
-  hashMessageModule,
-  legendsMessageModule,
-  openseaMessageModule,
-  permit2Module,
-  safeMessageModule,
-  snapshotModule,
-  zealyMessageModule
+  getFirstHumanization,
+  getTypedMessageHumanizer,
+  plainTextMessageModules
 } from './messageModules'
-import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
-import { dedupeWarnings } from './utils'
+import { dedupeWarnings, getDeclaredDomain } from './utils'
 
-// from least generic to most generic
-// the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [
-  // first, so no other module can describe a hash message without its warning
-  hashMessageModule,
-  safeMessageModule,
-  erc20Module,
-  erc721Module,
-  permit2Module,
-  cowSwapModule,
-  entryPointModule,
-  legendsMessageModule,
-  ensMessageModule,
-  openseaMessageModule,
-  zealyMessageModule,
-  safeMessageModule,
-  eip7702AuthorizationModule,
-  snapshotModule,
-  fallbackShortPlaintext
-]
+/**
+ * Humanizes a message with the message modules. A typed message uses only the
+ * humanizer for its primary type, with no fallback to other typed humanizers.
+ * A plain text message uses the first plain text module that matches. Other
+ * kinds (e.g. sign in with Ethereum) are not humanized here.
+ */
+const humanizeMessageWithModules = (message: Message): HumanizerMessageResult | null => {
+  // `message.content.kind` narrows only `content`, not `message`. A new object with
+  // the narrowed `content` gives each humanizer its message type without a cast
+  const { content } = message
+  try {
+    if (content.kind === 'typedMessage') {
+      const humanizeTypedMessage = getTypedMessageHumanizer(content.primaryType)
+      if (!humanizeTypedMessage) return null
+      // Domain fields that `EIP712Domain` does not declare are not signed, so no typed
+      // humanizer gets them (e.g. an undeclared `verifyingContract` must not be shown as the token)
+      const contentWithDeclaredDomain = { ...content, domain: getDeclaredDomain(content) }
+      return humanizeTypedMessage({ ...message, content: contentWithDeclaredDomain })
+    }
+    if (content.kind === 'message')
+      return getFirstHumanization(plainTextMessageModules, { ...message, content })
+    if (content.kind === 'authorization-7702')
+      return eip7702AuthorizationModule({ ...message, content })
+  } catch (error) {
+    // A humanizer that throws shows no visualization, but the ERC-7730 descriptor can still be used
+    console.error(error)
+  }
+
+  return null
+}
 
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
+  /**
+   * The names of the Privacy Pools accounts the calls deposit into, by call index, when the wallet
+   * knows them. Shown so deposits into several accounts in one batch can be told apart.
+   */
+  privacyPoolsAccountNames?: Record<number, string>
 }
 
 type HumanizeMessageOptions = {
@@ -60,8 +65,10 @@ type HumanizeMessageOptions = {
 const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
-  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) =>
-    humanizeCallWithModules(accountOp, originalCall)
+  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall, index: number) =>
+    humanizeCallWithModules(accountOp, originalCall, {
+      privacyPoolsAccountName: options?.privacyPoolsAccountNames?.[index]
+    })
   )
 
   if (options?.erc7730Descriptors) {
@@ -102,24 +109,16 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   const message = parse(stringify(_message))
 
   try {
-    // runs all modules and takes the first non empty array
+    // Null means no module could humanize the message, so it has no visualization
+    // and the UI shows the raw message
     const { fullVisualization, warnings, canHideDropdownArrow } =
-      humanizerTMModules
-        .map((m) => {
-          try {
-            return m(message)
-          } catch (error) {
-            console.error(error)
-            return {}
-          }
-        })
-        .filter((p) => p.fullVisualization?.length)[0] || {}
+      humanizeMessageWithModules(message) ?? {}
 
     if (options?.erc7730Descriptor) {
       const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
       if (erc7730Message) {
         // The descriptor builds its result from the raw message, so it starts with no warnings.
-        // The warnings humanizerTMModules found are still about the same message, so keep both.
+        // The warnings the message modules found are still about the same message, so keep both.
         return {
           ...erc7730Message,
           warnings: dedupeWarnings([...(warnings || []), ...(erc7730Message.warnings || [])])

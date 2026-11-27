@@ -121,6 +121,11 @@ export interface IrCall extends Omit<Call, 'to'> {
    * of the descriptor's.
    */
   preferredOverErc7730?: boolean
+  /**
+   * Set by a module whose visualization already shows the native amount the call sends (e.g. a
+   * Privacy Pools deposit of ETH), so the fallback humanizer does not add it again as a "Send".
+   */
+  showsCallValue?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
@@ -145,14 +150,61 @@ export interface Ir {
   messages: IrMessage[]
 }
 
-// @TODO make humanizer options interface
-export interface HumanizerCallModule {
-  (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
+/**
+ * What the wallet knows about a call that the call itself does not say. The modules only read it,
+ * so it never ends up in the humanized call.
+ */
+export type HumanizerCallContext = {
+  /**
+   * The name of the Privacy Pools account a deposit goes to, when the wallet knows it. Never
+   * stored with the transaction, as a stored log would link the deposit to the account.
+   */
+  privacyPoolsAccountName?: string
 }
 
-export interface HumanizerTypedMessageModule {
-  (typedMessage: Message): Omit<IrMessage, keyof Message>
+// @TODO make humanizer options interface
+export interface HumanizerCallModule {
+  (
+    accountOp: AccountOp,
+    call: IrCall,
+    humanizerMeta?: HumanizerMeta,
+    context?: HumanizerCallContext
+  ): IrCall
 }
+
+/** What a message humanizer adds to a message: the visualization, warnings and display flags */
+export type HumanizerMessageResult = Omit<IrMessage, keyof Message>
+
+/** A message whose content has the given `kind` */
+type MessageOfKind<Kind extends Message['content']['kind']> = Message & {
+  content: Extract<Message['content'], { kind: Kind }>
+}
+
+/** A message whose content is EIP-712 typed data */
+export type HumanizerTypedMessage = MessageOfKind<'typedMessage'>
+/** A message whose content is plain text (hex encoded) */
+type HumanizerPlainTextMessage = MessageOfKind<'message'>
+/** A message whose content is an EIP-7702 authorization */
+export type HumanizerAuthorizationMessage = MessageOfKind<'authorization-7702'>
+
+/**
+ * Humanizes a typed message of one EIP-712 primary type. It is stateless and is
+ * stored in a record keyed by that primary type, so it never decides the type
+ * from `types` or from the keys in `message`. Returns null when it cannot humanize
+ * the message (e.g. a different verifying contract). A result that is not null
+ * must have a visualization: the UI treats any result as a humanized message.
+ */
+export type HumanizerTypedMessageFunction = (
+  message: HumanizerTypedMessage
+) => HumanizerMessageResult | null
+
+/**
+ * Humanizes a plain text message. Returns null when it cannot humanize the message.
+ * The first module that does not return null is used
+ */
+export type HumanizerPlainTextMessageModule = (
+  message: HumanizerPlainTextMessage
+) => HumanizerMessageResult | null
 
 export interface AbiFragment {
   selector: string

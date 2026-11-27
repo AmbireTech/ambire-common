@@ -3,6 +3,7 @@ import { getBytes, Wallet } from 'ethers'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { LedgerSigner } from '../../../test/keystore'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -13,6 +14,7 @@ import {
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from '../../libs/appDataSync/appDataSync'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { MainController } from '../main/main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
@@ -42,11 +44,17 @@ const accounts = [
   toAccount(LEDGER_ADDR, 'Ledger account')
 ]
 
+/** A device that can sign with private keys and a Ledger, like both apps can */
+const SIGNERS_WITH_LEDGER = { internal: KeystoreSigner, ledger: LedgerSigner }
+
 const makeExportingDevice = async () => {
-  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', accounts)
-    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
-  })
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', accounts[0]!.addr)
+    },
+    { overrides: { keystoreSigners: SIGNERS_WITH_LEDGER } }
+  )
 
   await mainCtrl.keystore.addSecret('password', EXPORTING_PASS, '', true)
   await mainCtrl.keystore.addKeys(
@@ -78,8 +86,14 @@ const makeExportingDevice = async () => {
   return mainCtrl
 }
 
-const makeImportingDevice = async ({ withPassword }: { withPassword: boolean }) => {
-  const { mainCtrl } = await makeMainController()
+const makeImportingDevice = async ({
+  withPassword,
+  keystoreSigners = SIGNERS_WITH_LEDGER
+}: {
+  withPassword: boolean
+  keystoreSigners?: Parameters<typeof makeMainController>[1]['overrides']['keystoreSigners']
+}) => {
+  const { mainCtrl } = await makeMainController(undefined, { overrides: { keystoreSigners } })
 
   if (withPassword) await mainCtrl.keystore.addSecret('password', IMPORTING_PASS, '', true)
 
@@ -109,13 +123,19 @@ const exportPayload = async (
   return response.res as string
 }
 
+/** Syncs the payload and adds the synced accounts, as proceeding on the personalize step does */
+const syncAndAdd = async (mainCtrl: MainController, payload: string) => {
+  await mainCtrl.appDataSync.importData({ payload, password: EXPORTING_PASS })
+  await mainCtrl.accountPicker.addPreparedAccounts()
+}
+
 describe('AppDataSyncController', () => {
   test('exports only the selected accounts and imports them on the other device', async () => {
     const exportingDevice = await makeExportingDevice()
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([accounts[0]!.addr])
     // Preferences travel along, so the account looks the same on both devices
@@ -123,6 +143,54 @@ describe('AppDataSyncController', () => {
     // The key is re-encrypted with the importing device's main key, so it can sign
     const signer = await importingDevice.keystore.getSigner(accounts[0]!.addr, 'internal')
     expect(signer.key.addr).toBe(accounts[0]!.addr)
+  })
+
+  test('adds the accounts, their keys and the contacts only once the user adds them', async () => {
+    const exportingDevice = await makeExportingDevice()
+    await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr], {
+      includeSeeds: true,
+      includeNetworks: false,
+      includeContacts: true
+    })
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+
+    // Prepared for the personalize step, nothing written yet
+    expect(importingDevice.accountPicker.readyToAddAccounts.map((a) => a.addr)).toEqual([
+      accounts[0]!.addr
+    ])
+    expect(importingDevice.accounts.accounts).toHaveLength(0)
+    expect(importingDevice.keystore.keys).toHaveLength(0)
+    expect(await importingDevice.storage.get('contacts', [])).toEqual([])
+
+    await importingDevice.accountPicker.addPreparedAccounts()
+
+    expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([accounts[0]!.addr])
+    expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([accounts[0]!.addr])
+    expect(await importingDevice.storage.get('contacts', [])).toEqual([
+      expect.objectContaining({ name: 'Bob', address: NEW_CONTACT_ADDR })
+    ])
+  })
+
+  test('adds nothing when the user goes back from the personalize step', async () => {
+    const exportingDevice = await makeExportingDevice()
+    await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr], {
+      includeSeeds: true,
+      includeNetworks: false,
+      includeContacts: true
+    })
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await importingDevice.accountPicker.reset()
+
+    expect(importingDevice.accountPicker.readyToAddAccounts).toHaveLength(0)
+    expect(importingDevice.accounts.accounts).toHaveLength(0)
+    expect(importingDevice.keystore.keys).toHaveLength(0)
+    expect(await importingDevice.storage.get('contacts', [])).toEqual([])
   })
 
   test('imports accounts scanned before the device password was set (onboarding)', async () => {
@@ -135,11 +203,12 @@ describe('AppDataSyncController', () => {
     const importingDevice = await makeImportingDevice({ withPassword: false })
     await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
-    // The accounts are already there, the keys wait for a main key to be encrypted with
-    expect(importingDevice.accounts.accounts).toHaveLength(accounts.length)
-    expect(importingDevice.keystore.keys).toHaveLength(0)
-
+    // Prepared without a main key, as the password is set before the personalize step
+    expect(importingDevice.accountPicker.readyToAddAccounts).toHaveLength(accounts.length)
     await importingDevice.keystore.addSecret('password', IMPORTING_PASS, '', true)
+    await importingDevice.accountPicker.addPreparedAccounts()
+
+    expect(importingDevice.accounts.accounts).toHaveLength(accounts.length)
 
     // Every account that has a key on the other device can sign on this one as well
     expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([
@@ -154,7 +223,7 @@ describe('AppDataSyncController', () => {
     const payload = await exportPayload(exportingDevice, [VIEW_ONLY_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([VIEW_ONLY_ADDR])
     // It stays a watched account on this device too
@@ -166,7 +235,7 @@ describe('AppDataSyncController', () => {
     const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys).toEqual([
@@ -174,13 +243,78 @@ describe('AppDataSyncController', () => {
     ])
   })
 
+  test('keeps a key this device cannot sign with, as unsupported, and syncs it back', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
+
+    // A device without a Ledger signer, like the mobile app is for GridPlus
+    const importingDevice = await makeImportingDevice({
+      withPassword: true,
+      keystoreSigners: { internal: KeystoreSigner }
+    })
+    await syncAndAdd(importingDevice, payload)
+
+    expect(importingDevice.keystore.supportedKeyTypes).toEqual(['internal'])
+    // The account is view-only here, as nothing on this device can sign for it
+    expect(importingDevice.keystore.keys).toHaveLength(0)
+    expect(importingDevice.keystore.unsupportedKeys).toEqual([
+      expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger' })
+    ])
+    await expect(importingDevice.keystore.getSigner(LEDGER_ADDR, 'ledger')).rejects.toThrow(
+      'keystore: unsupported signer type'
+    )
+
+    // Syncing back to a device that supports it hands the key over again
+    const { keys } = await importingDevice.keystore.exportForSync([LEDGER_ADDR])
+    expect(keys).toEqual([expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger' })])
+  })
+
+  test('renames an account this device has to its name on the other device', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr, accounts[1]!.addr])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.accounts.addAccounts([
+      { ...accounts[0]!, preferences: { ...accounts[0]!.preferences, label: 'Name here' } }
+    ])
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+
+    // The personalize step shows the synced name already
+    expect(
+      importingDevice.accountPicker.readyToAddAccounts.map((a) => a.preferences.label)
+    ).toEqual(['Account 1', DEFAULT_ACCOUNT_LABEL])
+
+    await importingDevice.accountPicker.addPreparedAccounts()
+
+    expect(importingDevice.accounts.accounts.map((a) => a.preferences.label)).toEqual([
+      'Account 1',
+      DEFAULT_ACCOUNT_LABEL
+    ])
+  })
+
+  test('keeps the name the user gives a synced account on the personalize step', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.accounts.addAccounts([
+      { ...accounts[0]!, preferences: { ...accounts[0]!.preferences, label: 'Name here' } }
+    ])
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await importingDevice.accountPicker.addPreparedAccounts([
+      { addr: accounts[0]!.addr, preferences: { ...accounts[0]!.preferences, label: 'Renamed' } }
+    ])
+
+    expect(importingDevice.accounts.accounts[0]!.preferences.label).toBe('Renamed')
+  })
+
   test('does not duplicate an account the other device already has', async () => {
     const exportingDevice = await makeExportingDevice()
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.accounts.accounts).toHaveLength(1)
     expect(importingDevice.keystore.keys).toHaveLength(1)
@@ -218,7 +352,7 @@ describe('AppDataSyncController', () => {
     await importingDevice.addressBook.addContact('Old name', RENAMED_CONTACT_ADDR)
     await importingDevice.addressBook.addContact('Carol', UNTOUCHED_CONTACT_ADDR)
 
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     const findNetwork = (chainId: bigint) =>
       importingDevice.networks.allNetworks.find((n) => n.chainId === chainId)
@@ -278,7 +412,7 @@ describe('AppDataSyncController', () => {
     const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([LEDGER_ADDR])
@@ -306,7 +440,7 @@ describe('AppDataSyncController', () => {
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await syncAndAdd(importingDevice, payload)
 
     expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(false)
     expect(importingDevice.addressBook.contacts.filter((c) => !c.isWalletAccount)).toEqual([])
@@ -314,6 +448,29 @@ describe('AppDataSyncController', () => {
 
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
+
+    test('adds the accounts and reports the contacts alone when saving the contacts fails', async () => {
+      const exportingDevice = await makeExportingDevice()
+      await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+      const payload = await exportPayload(exportingDevice, [accounts[0]!.addr], {
+        includeSeeds: true,
+        includeNetworks: false,
+        includeContacts: true
+      })
+
+      const importingDevice = await makeImportingDevice({ withPassword: true })
+      jest
+        .spyOn(importingDevice.addressBook, 'mergeContacts')
+        .mockRejectedValueOnce(new Error('storage failure'))
+      await syncAndAdd(importingDevice, payload)
+
+      expect(importingDevice.accountPicker.emittedErrors).toHaveLength(0)
+      expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([accounts[0]!.addr])
+      expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([accounts[0]!.addr])
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
+        'Your accounts were added, but the contacts from your other device could not be saved. Please sync again to add them.'
+      )
+    })
 
     test('adds no accounts when the password of the other device is wrong', async () => {
       const exportingDevice = await makeExportingDevice()
@@ -325,6 +482,7 @@ describe('AppDataSyncController', () => {
       expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
         'Incorrect password. Please try again.'
       )
+      expect(importingDevice.accountPicker.readyToAddAccounts).toHaveLength(0)
       expect(importingDevice.accounts.accounts).toHaveLength(0)
       expect(importingDevice.keystore.keys).toHaveLength(0)
     })

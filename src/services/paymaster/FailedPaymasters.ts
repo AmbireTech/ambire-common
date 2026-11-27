@@ -30,7 +30,7 @@ export class FailedPaymasters {
     let paymasterBalance = 0n
     try {
       const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
-      paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
+      paymasterBalance = await ep.getFunction('balanceOf')(AMBIRE_PAYMASTER)
     } catch (e) {
       console.log('failed to retrieve the balance of the paymaster')
       console.error(e)

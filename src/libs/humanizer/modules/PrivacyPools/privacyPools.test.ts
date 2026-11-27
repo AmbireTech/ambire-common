@@ -2,9 +2,15 @@ import { ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
+import {
+  getPrivacyPoolsAsset,
+  getPrivacyPoolsChainConfig,
+  PRIVACY_POOLS_NATIVE_ASSET_ADDRESS
+} from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
+import { humanizeAccountOp } from '../..'
+import { humanizeCallWithModules } from '../../callModules'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import {
@@ -12,6 +18,7 @@ import {
   getAddressVisualization,
   getErc7730Visualization,
   getLabel,
+  getText,
   getToken
 } from '../../utils'
 import { humanizePrivacyPoolsWithdrawal, privacyPoolsModule } from './privacyPoolsModule'
@@ -56,6 +63,141 @@ describe('Privacy Pools humanizer', () => {
     ]
 
     compareHumanizerVisualizations(humanize(calls), expectedVisualizations)
+  })
+
+  describe('with all the humanizer modules', () => {
+    const fullAccountOp = {
+      id: 'test',
+      accountAddr: RECIPIENT,
+      chainId: 1n,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      nonce: null,
+      calls: [],
+      gasLimit: null,
+      signature: null,
+      gasFeePayment: null
+    }
+
+    test('shows the ETH of a native deposit once, not again as a separate send', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        })
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('names the account each deposit of a batch goes to, when the wallet knows it', () => {
+      const deposits = [1n, 2n, 3n].map((precommitment) => ({
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment
+        })
+      }))
+      const op = { ...fullAccountOp, calls: deposits }
+
+      const humanized = humanizeAccountOp(op, {
+        privacyPoolsAccountNames: { 0: 'Savings', 1: 'Salary' }
+      })
+
+      compareHumanizerVisualizations(humanized, [
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Savings'), isBold: true }
+        ],
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Salary'), isBold: true }
+        ],
+        // No name known, e.g. a deposit built before a restart
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to a Privacy Pools account')
+        ]
+      ])
+      // Kept off the transaction itself, which is stored, and off the humanized calls
+      expect(op.calls.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
+      expect(humanized.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
+    })
+
+    test('still shows ETH sent along with a token deposit', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: USDC,
+          amount: 5_000_000n,
+          precommitment: 42n
+        }),
+        value: 10n ** 16n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(USDC, 5_000_000n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('shows the ETH a call sends when it differs from the deposit amount', () => {
+      // The token deposit with the address that stands for ETH, so its amount comes from the
+      // calldata, not from the ETH the call sends
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: PRIVACY_POOLS_NATIVE_ASSET_ADDRESS,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        }),
+        value: 10n ** 19n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 19n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
   })
 
   test('leaves other calls alone, including a deposit on a network without Privacy Pools', () => {
@@ -200,6 +342,7 @@ describe('Privacy Pools humanizer', () => {
     ) =>
       humanizePrivacyPoolsWithdrawal({
         chainId: CHAIN_ID,
+        broadcaster: 'kohaku',
         withdrawal: {
           ...withdrawal,
           ...(overrides.tokenAddress && { tokenAddress: overrides.tokenAddress }),
@@ -280,6 +423,83 @@ describe('Privacy Pools humanizer', () => {
         [humanize(10n ** 15n, { tokenAddress: ZeroAddress, amount: 10n ** 18n })],
         [expectedCard(ZeroAddress, 10n ** 18n, 300_000n, 10n ** 15n)]
       )
+    })
+
+    describe('through 0xBow', () => {
+      /** 0.18% of 5 USDC, of which the relayer's own 0.1%. */
+      const relayedWithdrawal = {
+        recipient: RECIPIENT,
+        tokenAddress: USDC,
+        amount: 5_000_000n,
+        fee: 9_000n,
+        serviceFee: 5_000n,
+        expiresAt: 1_700_000_060_000
+      }
+
+      const getRows = (withdrawal: typeof relayedWithdrawal) => {
+        const card = humanizePrivacyPoolsWithdrawal({
+          chainId: CHAIN_ID,
+          broadcaster: '0xbow',
+          withdrawal,
+          expectedFeeAmount: withdrawal.fee,
+          usdPrice: USD_PRICE
+        }).fullVisualization?.[0]
+        if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+
+        return card.fields.flatMap((row) => (row.type === 'single-value' ? [row] : []))
+      }
+      const getTokenValue = (row: { value: HumanizerVisualization } | undefined) => {
+        if (row?.value.type !== 'token') throw new Error('Expected a token row')
+
+        return row.value.value
+      }
+
+      test('shows the exact fee as the service fee and the network fee, as no part is refunded', () => {
+        const rows = getRows(relayedWithdrawal)
+
+        expect(
+          rows.map(({ label, valuePrefix, hasSeparatorBefore }) => [
+            label,
+            valuePrefix,
+            !!hasSeparatorBefore
+          ])
+        ).toEqual([
+          ['Amount to Send', undefined, false],
+          ['Recipient Receives', undefined, false],
+          ['Recipient', undefined, true],
+          ['Service fee', undefined, true],
+          ['Network fee', undefined, false]
+        ])
+        expect(getTokenValue(rows[1])).toBe(4_991_000n)
+        expect(getTokenValue(rows[3])).toBe(5_000n)
+        expect(getTokenValue(rows[4])).toBe(4_000n)
+      })
+
+      test('prices both fees', () => {
+        const [, , , serviceFeeRow, networkFeeRow] = getRows(relayedWithdrawal)
+
+        expect(serviceFeeRow?.value).toMatchObject({ usdPrice: USD_PRICE })
+        expect(networkFeeRow?.value).toMatchObject({ usdPrice: USD_PRICE })
+      })
+
+      test('still shows the network fee when the relayer charges nothing for it', () => {
+        const rows = getRows({ ...relayedWithdrawal, fee: 5_000n })
+
+        expect(rows[4]?.label).toBe('Network fee')
+        expect(getTokenValue(rows[4])).toBe(0n)
+      })
+    })
+
+    test('shows no service fee through Kohaku, whose paymaster takes only the network fee', () => {
+      const card = humanize(120_000n).fullVisualization?.[0]
+      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+
+      expect(card.fields.map((row) => row.type === 'single-value' && row.label)).toEqual([
+        'Amount to Send',
+        'Recipient Receives',
+        'Recipient',
+        'Network fee'
+      ])
     })
 
     test('carries no raw call, so nothing of the single-use sender is shown', () => {

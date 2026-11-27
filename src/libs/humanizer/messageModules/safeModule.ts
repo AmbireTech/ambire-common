@@ -1,8 +1,7 @@
 import { isAddress } from 'ethers'
 
-import { Message } from '../../../interfaces/userRequest'
 import { getSafeTxCallsFromMessage } from '../erc7730/utils'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageFunction, HumanizerVisualization } from '../interfaces'
 import {
   getDelegateCallWarning,
   getSafeHumanization,
@@ -11,17 +10,38 @@ import {
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   dedupeWarnings,
+  ExpectedTypedData,
   getAction,
   getAddressVisualization,
   getBreak,
   getLabel,
+  isExactTypedData,
   withLowerCaseCallData
 } from '../utils'
 
-export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind === 'message' || typeof message.content.message === 'string')
-    return { fullVisualization: [] }
-  if (message.content.primaryType !== 'SafeTx') return { fullVisualization: [] }
+/** Safe{WALLET} transaction (v1.0.0 and later), as the Safe contracts sign it */
+const SAFE_TX_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'SafeTx',
+  types: {
+    SafeTx: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: 'nonce', type: 'uint256' }
+    ]
+  }
+}
+
+/** Humanizes a Safe{WALLET} transaction (primary type `SafeTx`) */
+export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
+  if (!isExactTypedData(message.content, SAFE_TX_TYPED_DATA)) return null
+
   const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
@@ -39,7 +59,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     nonce
   )
   const fullVisualization: HumanizerVisualization[] = []
-  if (!isAddress(verifyingContract)) return {}
+  if (!isAddress(verifyingContract)) return null
   fullVisualization.push(
     ...[
       getAction('Safe{WALLET} transaction'),

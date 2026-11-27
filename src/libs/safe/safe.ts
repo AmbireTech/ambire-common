@@ -810,8 +810,13 @@ export function toCallsUserRequest(
     const txns = response[chainId]!.txns
     txns.forEach((txn) => {
       // A batch is shown as its calls only if they are exactly what gets signed,
-      // otherwise the txn is shown as it will be sent
-      const calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = getSafeTxCalls(txn)
+      // otherwise the txn is shown as it will be sent.
+      // Another signer or app proposed this transaction, so its calldata can be in any case.
+      // Hex is case-insensitive onchain, so lower-casing it changes neither the bytes nor the
+      // safeTxHash, and the humanizer and the decoder see the form they match against
+      const calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = getSafeTxCalls(
+        txn
+      ).map((call) => ({ ...call, data: call.data.toLowerCase() }))
 
       const signature = txn.confirmations
         ? sortSigs(

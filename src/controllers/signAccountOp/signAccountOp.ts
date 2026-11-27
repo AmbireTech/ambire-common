@@ -66,6 +66,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import {
@@ -382,6 +383,20 @@ export class SignAccountOpController
 
   #isRegistrable: boolean
 
+  #privacyPools: IPrivacyPoolsController
+
+  /**
+   * The names of the Privacy Pools accounts the calls deposit into, by call index (see
+   * `PrivacyPoolsController.getDepositAccountName`).
+   */
+  #getPrivacyPoolsAccountNames(): Record<number, string> {
+    return this.accountOp.calls.reduce<Record<number, string>>((names, call, index) => {
+      const name = this.#privacyPools.getDepositAccountName(this.#network.chainId, call)
+      if (name) names[index] = name
+      return names
+    }, {})
+  }
+
   #isDestroyed = false
 
   /** Safes only: the checks for sent approvals of smart account owners, stopped on destroy */
@@ -614,6 +629,13 @@ export class SignAccountOpController
   #replacement?: TxnReplacement
 
   /**
+   * Set when the user cancels the signing, which rejects the request waiting on the device
+   * (e.g. "Operation cancelled by user"). That rejection is only logged, not shown as an error.
+   * Cleared when signing starts again
+   */
+  #isSigningCancelledByUser = false
+
+  /**
    * An earlier sent op that is not confirmed yet and holds a nonce this op needs, and the
    * account op to replace it with, when this op can (see `replacePendingAccountOp`). Null when
    * nothing holds this op back, and during a speed up or a cancel, as they take no new nonce.
@@ -624,6 +646,8 @@ export class SignAccountOpController
   } | null = null
 
   #onActivityUpdateUnsubscribe?: () => void
+
+  #onKeystoreUpdateUnsubscribe?: () => void
 
   #isReplacedPendingAccountOpProcessed = false
 
@@ -654,7 +678,8 @@ export class SignAccountOpController
     onBroadcastSuccess,
     onBroadcastFailed,
     onPartialBroadcast,
-    replacement
+    replacement,
+    privacyPools
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -684,9 +709,12 @@ export class SignAccountOpController
     onPartialBroadcast?: OnPartialBroadcast
     /** Pass only when speeding up or canceling a pending transaction */
     replacement?: TxnReplacement
+    /** Names the Privacy Pools account each deposit in the batch goes to */
+    privacyPools: IPrivacyPoolsController
   }) {
     super(eventEmitterRegistry, false)
     this.#isRegistrable = !!eventEmitterRegistry
+    this.#privacyPools = privacyPools
     this.#networks = networks
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
@@ -1302,6 +1330,35 @@ export class SignAccountOpController
     return this.#replacement ? this.#replacement.applyMinFees(gasPrices) : gasPrices
   }
 
+  #isKeyStored(addr: Key['addr'], type: Key['type']) {
+    return this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+  }
+
+  /**
+   * Forgets the signing and the fee payer key once they are removed, so `update` picks the
+   * default ones again and the user sees them before signing. Never while signing, as the user
+   * agreed to what is on the screen. A speed up keeps its signer, as it can't sign with another
+   */
+  #forgetRemovedKeys() {
+    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status.type) !== -1) return
+
+    const { signingKeyAddr, signingKeyType, gasFeePayment } = this.accountOp
+    const isSigningKeyRemoved =
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      this.canChangeSigningKey &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    // Set only when an imported key pays the fee
+    const isFeePayerKeyRemoved =
+      !!gasFeePayment?.paidByKeyType &&
+      !this.#isKeyStored(gasFeePayment.paidBy, gasFeePayment.paidByKeyType)
+    if (!isSigningKeyRemoved && !isFeePayerKeyRemoved) return
+
+    if (isSigningKeyRemoved) this.#updateAccountOp({ signingKeyAddr: null, signingKeyType: null })
+    if (gasFeePayment && isFeePayerKeyRemoved) gasFeePayment.paidByKeyType = null
+    this.update({})
+  }
+
   async #getDefaultSigner() {
     // call this method during signing only
 
@@ -1444,6 +1501,11 @@ export class SignAccountOpController
       this.propagateUpdate(forceEmit)
     }, `sign-account-op-earlier-pending-${generateUuid()}`)
     this.#updateEarlierPendingAccountOp()
+
+    // A key can be removed (e.g. in Settings, in another window) while this op waits
+    this.#onKeystoreUpdateUnsubscribe = this.#keystore.onUpdate(() => {
+      this.#forgetRemovedKeys()
+    }, `sign-account-op-removed-keys-${generateUuid()}`)
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -1722,7 +1784,12 @@ export class SignAccountOpController
       return false
     }
 
-    this.#setHumanization(humanizeAccountOp(this.accountOp), humanizationId)
+    this.#setHumanization(
+      humanizeAccountOp(this.accountOp, {
+        privacyPoolsAccountNames: this.#getPrivacyPoolsAccountNames()
+      }),
+      humanizationId
+    )
     this.learnTokens()
 
     return true
@@ -1739,7 +1806,8 @@ export class SignAccountOpController
 
     const erc7730Humanization = humanizeAccountOp(this.accountOp, {
       erc7730Descriptors,
-      nativeAssetSymbol: this.#network.nativeAssetSymbol
+      nativeAssetSymbol: this.#network.nativeAssetSymbol,
+      privacyPoolsAccountNames: this.#getPrivacyPoolsAccountNames()
     })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
@@ -3082,6 +3150,8 @@ export class SignAccountOpController
     this.#replacement?.destroy()
     this.#onActivityUpdateUnsubscribe?.()
     this.#onActivityUpdateUnsubscribe = undefined
+    this.#onKeystoreUpdateUnsubscribe?.()
+    this.#onKeystoreUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -3961,6 +4031,7 @@ export class SignAccountOpController
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       // not a request of its own, so broadcasting it doesn't resolve any request
       fromRequestId: `${this.fromRequestId}-safe-owner-approval-${owner.addr}`,
       accountOp: getSafeOwnerApprovalAccountOp({
@@ -4259,6 +4330,12 @@ export class SignAccountOpController
     signature: Hex
     shouldPropose: boolean
   }) {
+    // Opted out of the Safe API: the signature only stays here. Not a failure, as it's the
+    // user's choice, so signing continues as if it was shared (e.g. sign and close closes).
+    // Read once the flags are loaded, as until then they are the defaults
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return
+
     if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
       await withTimeout(
@@ -4322,6 +4399,23 @@ export class SignAccountOpController
     return this.#hasCustomGas ? this.#customFeeSpeeds : this.networkFeeSpeeds
   }
 
+  /**
+   * The symbol of the network's native token when it has no USD price, e.g. on a network whose
+   * token prices can't be read while the user is opted out of our price API. Every fee option
+   * other than the native token itself (e.g. the Gas Tank) is then left without a fee amount, as
+   * the fee is estimated in the native token and converted by price. Null when it is priced.
+   */
+  get unpricedNativeTokenSymbol(): string | null {
+    const native = this.#portfolio
+      .getAccountPortfolioState(this.accountOp.accountAddr)
+      [
+        this.accountOp.chainId.toString()
+      ]?.result?.tokens.find((token) => token.address === ZeroAddress)
+    if (!native || native.priceIn.some((price) => price.baseCurrency === 'usd')) return null
+
+    return native.symbol
+  }
+
   get gasSavedUSD(): number | null {
     if (!this.selectedOption?.token.flags.onGasTank) return null
 
@@ -4372,7 +4466,12 @@ export class SignAccountOpController
     sendCrashReport?: boolean
     accountState?: AccountOnchainState
   }) {
-    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
+    this.emitError({
+      level: this.#isSigningCancelledByUser ? 'silent' : 'major',
+      message,
+      error: new Error(message),
+      sendCrashReport
+    })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -4639,6 +4738,8 @@ export class SignAccountOpController
   }
 
   async sign() {
+    this.#isSigningCancelledByUser = false
+
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
@@ -4656,6 +4757,19 @@ export class SignAccountOpController
 
     if (!isSafeDeploy && !this.#isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
+    }
+
+    // E.g. a speed up, which can only be signed by the key of the transaction it replaces
+    if (
+      !isSafeDeploy &&
+      !this.#isSafeFullySigned &&
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    ) {
+      const message =
+        'The key that has to sign this transaction was removed from the wallet. Import it again to sign.'
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
@@ -5895,9 +6009,13 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal
-      // or when the speed up is no longer needed.
-      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal,
+      // when the speed up is no longer needed, or when the user cancelled the signing
+      // (the device's rejection that follows isn't an error to them).
+      level:
+        softFeeUpdateConfirmation || isSpeedUpNotNeeded || this.#isSigningCancelledByUser
+          ? 'silent'
+          : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -5953,6 +6071,8 @@ export class SignAccountOpController
   }
 
   cancelSignReq() {
+    // Before the reset, as it rejects the request waiting on the device right away
+    this.#isSigningCancelledByUser = true
     this.#resetToReadyToSign()
     this.emitUpdate()
     this.#checkReplacementStillNeeded()
@@ -6199,6 +6319,7 @@ export class SignAccountOpController
       account: this.account,
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
+      unpricedNativeTokenSymbol: this.unpricedNativeTokenSymbol,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
       humanization: this.humanization,
