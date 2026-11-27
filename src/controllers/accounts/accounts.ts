@@ -649,7 +649,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * Returns the saved account state of a network, fetching it in the rare case it is missing.
    * A precaution, as code has assumed in the past that the state was fetched when it wasn't. With
    * `maxDataAgeMs` it also fetches a saved state older than that, joining a fetch that is already
-   * running, and returns a younger one at once. Undefined when the state couldn't be fetched.
+   * running, and returns a younger one at once. A failed fetch returns the saved state, or
+   * undefined when there is none.
    */
   async getOrFetchAccountOnChainState(
     addr: string,

@@ -167,16 +167,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     const getAccountsOpsStatusesInterval = () =>
       this.#getAccountsOpsStatusesRefreshInterval(this.#getOpsWaitingForConfirmation())
 
-    /**
-     * When and how often each timer runs. The account state timers run only while a wallet
-     * window is open (a request from a connected app opens one too). Trending tokens are shown
-     * only in a window, so they refresh at once on opening one, and the freshness guard in
-     * #updateTrendingTokens skips the fetch when it is recent. The other timers don't fetch at
-     * once, as opening a window refreshes the data that is old. The Safe checks also slow down
-     * while they keep finding nothing new (see `getSafeResolveTimeout`). The user opening or
-     * coming back to the wallet may be waiting on the other owners of a Safe, so the Safe checks
-     * start over at the fast interval.
-     */
+    // The schedule of every background timer: how often it runs in each wallet state, and
+    // which events restart it
     this.#timers = {
       portfolio: this.#createTimer('portfolio', {
         run: this.#updatePortfolio,

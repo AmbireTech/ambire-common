@@ -1062,10 +1062,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   /**
    * Tries to update the account state for ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS. If that
-   * fails, uses the previous account
-   * state if it exists, otherwise waits for the fetch to complete (no matter how long it takes).
-   * This is done in an attempt to always have the latest nonce, but without blocking the UI for
-   * too long if the RPC is slow to respond.
+   * fails, uses the previous account state if it exists, otherwise waits for the fetch to
+   * complete (no matter how long it takes). This is done in an attempt to always have the latest
+   * nonce, but without blocking the UI for too long if the RPC is slow to respond.
    */
   async #getAccountStateWithFallback(
     accountAddr: string,
@@ -4199,8 +4198,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
 
-      // Waits for the fresh state, so the request starts with the latest nonce, unless the fetch
-      // is slow and a saved state exists, which the request then uses.
       const accountState = await this.#getAccountStateWithFallback(meta.accountAddr, meta.chainId)
 
       if (!accountState) {

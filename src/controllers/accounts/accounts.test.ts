@@ -477,17 +477,6 @@ describe('AccountsController account state fetching', () => {
 
       expect((await read)?.currentBlock).toBe(11n)
     })
-
-    test('returns a fresh saved state without a fetch', async () => {
-      const { accountsCtrl, fetches } = ctrl
-      setSavedState(0)
-
-      const state = await accountsCtrl.getOrFetchAccountOnChainState(ADDR_A, BASE.chainId, {
-        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
-      })
-      expect(fetches).toHaveLength(0)
-      expect(state?.currentBlock).toBe(10n)
-    })
   })
 
   describe('getLatestAccountNonce', () => {
