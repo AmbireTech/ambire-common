@@ -2,7 +2,11 @@ import { ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
+import {
+  getPrivacyPoolsAsset,
+  getPrivacyPoolsChainConfig,
+  PRIVACY_POOLS_NATIVE_ASSET_ADDRESS
+} from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
 import { humanizeAccountOp } from '../..'
@@ -160,6 +164,35 @@ describe('Privacy Pools humanizer', () => {
             getLabel('and'),
             getAction('Send'),
             getToken(USDC, 5_000_000n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('shows the ETH a call sends when it differs from the deposit amount', () => {
+      // The token deposit with the address that stands for ETH, so its amount comes from the
+      // calldata, not from the ETH the call sends
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: PRIVACY_POOLS_NATIVE_ASSET_ADDRESS,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        }),
+        value: 10n ** 19n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 19n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
             getLabel('to a Privacy Pools account')
           ]
         ]

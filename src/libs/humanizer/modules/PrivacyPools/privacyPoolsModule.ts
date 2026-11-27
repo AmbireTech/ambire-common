@@ -76,8 +76,9 @@ export const privacyPoolsModule: HumanizerCallModule = (
   return {
     ...call,
     // A native deposit's amount is the call's value. An ERC-20 one sends no value, so any value it
-    // has is still shown on its own
-    showsCallValue: isPrivacyPoolsNativeAsset(tokenAddress),
+    // has is still shown on its own, as is any value that differs from the amount shown (e.g. a
+    // token deposit with the address that stands for ETH)
+    showsCallValue: isPrivacyPoolsNativeAsset(tokenAddress) && call.value === deposit.amount,
     fullVisualization: [
       getAction('Send'),
       getToken(tokenAddress, deposit.amount),
