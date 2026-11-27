@@ -1,3 +1,4 @@
+import { ZeroAddress } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
 import { Erc7730DisplayFormat } from '../../src/libs/humanizer/erc7730/types'
@@ -145,23 +146,108 @@ export const amendments: Amendments = {
     },
     [COW_SWAP_ETH_FLOW_NAME]: {
       reason:
-        'show the unwrapped amount in the native token of each network, and describe cancelling many orders',
+        "name each network's native token instead of ETH (the descriptor is used on all CoW networks), and describe cancelling many orders",
       addresses: [getRegistryKey(1, COW_SWAP_ETH_FLOW_ADDRESS)],
       amend: ({ descriptor, fields, expectMatches, expectEqual }) => {
-        const [unwrapAmount] = expectMatches(
-          'unwrap amount fields',
-          fields((field, format) => format === 'unwrap(uint256 amount)' && field.path === 'amount'),
-          1
-        )
-        expectEqual('the unwrap amount format', unwrapAmount!.field.format, 'tokenAmount')
-        unwrapAmount!.field.label = 'Amount to Unwrap'
-        unwrapAmount!.field.format = 'amount'
-        delete unwrapAmount!.field.params
-
         const formats = descriptor.display!.formats!
+        const getFormat = (name: string) => {
+          const [signature] = expectMatches(
+            `${name} formats`,
+            Object.keys(formats).filter((key) => key.startsWith(`${name}(`)),
+            1
+          )
+          return formats[signature!]!
+        }
+        const setIntents = (
+          name: string,
+          [oldIntent, oldInterpolatedIntent]: [string, string | undefined],
+          [intent, interpolatedIntent]: [string, string]
+        ) => {
+          const format = getFormat(name)
+          expectEqual(`the ${name} intent`, format.intent, oldIntent)
+          expectEqual(
+            `the ${name} interpolated intent`,
+            format.interpolatedIntent,
+            oldInterpolatedIntent
+          )
+          format.intent = intent
+          format.interpolatedIntent = interpolatedIntent
+        }
+        const getField = (name: string, path: string) => {
+          const [match] = expectMatches(
+            `${name} ${path} fields`,
+            fields((field, format) => format.startsWith(`${name}(`) && field.path === path),
+            1
+          )
+          return match!.field
+        }
+
+        // The native token of the network, for the intents that have no amount to show it with
+        const metadata = descriptor.metadata ?? {}
+        const constants = (metadata.constants ?? {}) as Record<string, unknown>
+        expectEqual('the native token constant of the registry', constants.nativeToken, undefined)
+        descriptor.metadata = { ...metadata, constants: { ...constants, nativeToken: ZeroAddress } }
+        const nativeTokenField = {
+          path: '$.metadata.constants.nativeToken',
+          label: 'Token',
+          format: 'tokenTicker'
+        }
+
+        setIntents(
+          'createOrder',
+          ['Create ETH sell order', undefined],
+          ['Create sell order', 'Sell {order.sellAmount} for at least {order.buyAmount}']
+        )
+        const totalSent = getField('createOrder', '@.value')
+        expectEqual('the createOrder total label', totalSent.label, 'Total ETH Sent')
+        totalSent.label = 'Total Sent'
+
+        setIntents(
+          'invalidateOrder',
+          ['Cancel ETH order, refund owner', undefined],
+          ['Cancel order, refund owner', 'Cancel the order and refund {order.sellAmount}']
+        )
+
+        // Unwrapping gives the native token, so show the amount as that (the descriptor names
+        // Ethereum WETH, which is wrong on every other network)
+        setIntents(
+          'unwrap',
+          ["Unwrap EthFlow's WETH", 'Unwrap {amount} in EthFlow'],
+          ["Unwrap EthFlow's wrapped native token", 'Unwrap {amount} in EthFlow']
+        )
+        const unwrapAmount = getField('unwrap', 'amount')
+        expectEqual('the unwrap amount format', unwrapAmount.format, 'tokenAmount')
+        unwrapAmount.label = 'Amount to Unwrap'
+        unwrapAmount.format = 'amount'
+        delete unwrapAmount.params
+
+        setIntents(
+          'wrap',
+          ["Wrap EthFlow's ETH", 'Wrap {amount} in EthFlow'],
+          ["Wrap EthFlow's native token", 'Wrap {amount} in EthFlow']
+        )
+        const wrapAmount = getField('wrap', 'amount')
+        expectEqual('the wrap amount label', wrapAmount.label, 'ETH to Wrap')
+        wrapAmount.label = 'Amount to Wrap'
+
+        setIntents(
+          'wrapAll',
+          ["Wrap all EthFlow's ETH", 'Wrap all ETH held by EthFlow'],
+          [
+            "Wrap all EthFlow's native token",
+            'Wrap all {$.metadata.constants.nativeToken} held by EthFlow'
+          ]
+        )
+        const wrapAll = getFormat('wrapAll')
+        expectEqual('the wrapAll fields', wrapAll.fields, [])
+        wrapAll.fields = [nativeTokenField]
+
         Object.entries(COW_SWAP_ETH_FLOW_FORMATS).forEach(([signature, format]) => {
           expectEqual(`${signature} of the registry`, formats[signature], undefined)
-          formats[signature] = format
+          formats[signature] = {
+            ...format,
+            fields: [...(format.fields ?? []), nativeTokenField]
+          }
         })
       }
     }

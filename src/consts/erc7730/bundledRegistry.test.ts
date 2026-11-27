@@ -1,4 +1,4 @@
-import { id, isHexString } from 'ethers'
+import { id, isHexString, ZeroAddress } from 'ethers'
 import { readdirSync, readFileSync } from 'fs'
 import path from 'path'
 import { isDeepStrictEqual as isEqual } from 'util'
@@ -250,6 +250,14 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     const unwrapFields = ethFlow.display?.formats?.['unwrap(uint256 amount)']?.fields
 
     expect(unwrapFields?.map(({ format }) => format)).toEqual(['amount'])
+    // It is used on every CoW network, so no text names ETH: the native token is shown as a token
+    const texts = Object.values(ethFlow.display?.formats ?? {}).flatMap((format) => [
+      format.intent,
+      format.interpolatedIntent,
+      ...getFields({ display: { formats: { format } } }).map(({ label }) => label)
+    ])
+    expect(texts.filter((text) => typeof text === 'string' && /\bW?ETH\b/.test(text))).toEqual([])
+    expect(ethFlow.metadata?.constants).toMatchObject({ nativeToken: ZeroAddress })
     expect(
       Object.keys(ethFlow.display?.formats ?? {}).some((format) =>
         format.startsWith('invalidateOrdersIgnoringNotAllowed(')

@@ -1,6 +1,7 @@
 {
   "invalidateOrdersIgnoringNotAllowed((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId)[] orderArray)": {
-    "intent": "Cancel CowSwap ETH orders",
+    "intent": "Cancel CowSwap orders",
+    "interpolatedIntent": "Cancel CowSwap {$.metadata.constants.nativeToken} orders",
     "fields": [
       {
         "path": "orderArray[]",
