@@ -209,6 +209,19 @@ describe('buildRegistry', () => {
     ])
   })
 
+  test('bundles includes of any depth', () => {
+    const files: Record<string, unknown> = {}
+    for (let level = 0; level < 8; level += 1) {
+      files[`registry/a/level-${level}.json`] = descriptor(
+        level < 7 ? { includes: `level-${level + 1}.json` } : {}
+      )
+    }
+
+    const registry = buildRegistry(withIndexes(files, { [KEY]: 'registry/a/level-0.json' }))
+
+    expect(Object.keys(registry.descriptors)).toHaveLength(8)
+  })
+
   test('fails when the registry has no indexes', () => {
     expect(getProblems(upstreamOf({}))).toEqual([
       `The registry has no ${CALLDATA_INDEX_FILE}`,

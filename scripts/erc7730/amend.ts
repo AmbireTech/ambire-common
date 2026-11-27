@@ -11,7 +11,6 @@ import {
   mergeDescriptors,
   validateDescriptor
 } from '../../src/libs/humanizer/erc7730/descriptor'
-import { ERC7730_MAX_RESOLUTION_DEPTH } from '../../src/libs/humanizer/erc7730/registry'
 import { Erc7730Descriptor, Erc7730Field } from '../../src/libs/humanizer/erc7730/types'
 import { getRegistryKey, isPlainObject } from '../../src/libs/humanizer/erc7730/utils'
 import {
@@ -295,16 +294,24 @@ export const applyAmendments = (
   const amendedPaths = new Map<string, string>()
 
   /** A descriptor merged with everything it includes, or null if anything is missing */
-  const flatten = (name: string, depth = 0): Erc7730Descriptor | null => {
+  // No depth limit. An include already on the chain of includes being merged is skipped, so a loop
+  // ends. Only that chain: a descriptor included twice through different ones is merged both times,
+  // as in the wallet
+  const flatten = (
+    name: string,
+    chain: ReadonlySet<string> = new Set()
+  ): Erc7730Descriptor | null => {
     if (!hasDescriptor(name)) return null
     const descriptor = descriptors[name]
     // Every bundled descriptor passed this check already. It gives the descriptor its type
     if (!validateDescriptor(descriptor)) return null
     const includes = getIncludes(descriptor)
     if (!includes.length) return structuredClone(descriptor)
-    if (depth >= ERC7730_MAX_RESOLUTION_DEPTH) return null
 
-    const included = includes.map((include) => flatten(include, depth + 1))
+    const nextChain = new Set(chain).add(name)
+    const included = includes
+      .filter((include) => !nextChain.has(include))
+      .map((include) => flatten(include, nextChain))
     if (included.some((one) => !one)) return null
 
     // The same merge as the wallet's, so the result reads the same

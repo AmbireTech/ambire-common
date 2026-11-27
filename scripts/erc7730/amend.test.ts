@@ -125,6 +125,42 @@ describe('applyAmendments: amends', () => {
     expect(amended.calldataIndex[NEW_KEY]).toBe('pool/calldata-PoolV2.json')
   })
 
+  test('amends a descriptor whose includes are deeper than the wallet once read', () => {
+    const registry = upstreamRegistry()
+    for (let level = 0; level < 7; level += 1) {
+      registry.descriptors[`pool/level-${level}.json`] =
+        level < 6
+          ? { $schema: SCHEMA, includes: `pool/level-${level + 1}.json` }
+          : { $schema: SCHEMA }
+    }
+    registry.descriptors['pool/common-Pool.json']!.includes = 'pool/level-0.json'
+
+    const { registry: amended } = applyAmendments(
+      registry,
+      withAmendments({ amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue } }),
+      {}
+    )
+
+    expect(amended.descriptors['ambire-change/pool/calldata-Pool.json']).toBeDefined()
+  })
+
+  test('amends a descriptor whose includes loop, merging each of them once', () => {
+    const registry = upstreamRegistry()
+    registry.descriptors['pool/common-Pool.json']!.includes = 'pool/calldata-Pool.json'
+
+    const { registry: amended } = applyAmendments(
+      registry,
+      withAmendments({ amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue } }),
+      {}
+    )
+
+    expect(
+      Object.keys(
+        (amended.descriptors['ambire-change/pool/calldata-Pool.json'] as any).display.formats
+      )
+    ).toEqual(['burn()', 'mint()'])
+  })
+
   test('fails when what it expects is no longer there', () => {
     const registry = upstreamRegistry()
     ;(registry.descriptors['pool/calldata-Pool.json'] as any).display.formats['mint()'].fields = []
