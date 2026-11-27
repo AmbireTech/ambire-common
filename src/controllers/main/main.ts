@@ -52,6 +52,7 @@ import { SignAccountOpPreferenceController } from '@/controllers/signAccountOp/s
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
 import { SurveyController } from '@/controllers/survey/survey'
+import { LimitOrdersController } from '@/controllers/limitOrders/limitOrders'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
@@ -99,6 +100,7 @@ import { ISignAccountOpController } from '@/interfaces/signAccountOp'
 import { ISignMessageController, SignMessageStatus } from '@/interfaces/signMessage'
 import { IStorageController, Storage } from '@/interfaces/storage'
 import { ISurveyController } from '@/interfaces/survey'
+import { ILimitOrdersController } from '@/interfaces/limitOrders'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
@@ -198,6 +200,8 @@ export class MainController extends EventEmitter implements IMainController {
   signMessage: ISignMessageController
 
   swapAndBridge: ISwapAndBridgeController
+
+  limitOrders: ILimitOrdersController
 
   transactionManager?: ITransactionManagerController
 
@@ -741,6 +745,49 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
+    })
+    this.limitOrders = new LimitOrdersController({
+      eventEmitterRegistry,
+      callRelayer: this.callRelayer,
+      accounts: this.accounts,
+      keystore: this.keystore,
+      portfolio: this.portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      signAccountOpPreference: this.signAccountOpPreference,
+      featureFlags: this.featureFlags,
+      platform,
+      phishing: this.phishing,
+      dapps: this.dapps,
+      erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
+      relayerUrl,
+      // The same instance as the swaps', so both share its token list cache
+      cowSwapApi: CowSwapProvider,
+      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      ui: this.ui,
+      requestSignatureInWindow: (userRequestParams) =>
+        this.requests.build({
+          type: 'calls',
+          params: { userRequestParams, executionType: 'open-request-window' }
+        }),
+      storage: this.storage,
+      portfolioUpdate: (chainIds) => {
+        const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+        if (!networks.length) return
+
+        this.updateSelectedAccountPortfolio({ networks }).catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to refresh the portfolio after a limit order filled',
+            error
+          })
+        )
+      }
     })
     this.appDataSync = new AppDataSyncController({
       eventEmitterRegistry,
@@ -1465,6 +1512,8 @@ export class MainController extends EventEmitter implements IMainController {
     await this.activity.addAccountOp(submittedAccountOp)
     // Every deposit into a Privacy Pools account, however signed, is broadcast through here
     this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
+    // So are the limit orders placed or cancelled from the signing window (Safe accounts)
+    this.limitOrders.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -1508,6 +1557,12 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.signAccountOpController.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.transfer.signAccountOpController
+    } else if (
+      type === 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      this.limitOrders.signAccountOpController.fromRequestId === fromRequestId
+    ) {
+      signAccountOp = this.limitOrders.signAccountOpController
     } else if (
       type === 'safe-owner-approval' &&
       this.requests.currentUserRequest?.kind === 'calls' &&
@@ -1583,6 +1638,16 @@ export class MainController extends EventEmitter implements IMainController {
         signAccountOp.accountOp
       ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
+    ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    } else if (
+      type !== 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      isSameChainAndSender(
+        this.limitOrders.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
+      this.limitOrders.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     }
@@ -2192,6 +2257,11 @@ export class MainController extends EventEmitter implements IMainController {
               // Updates the Privacy Pools balances. Failed ops too, to remove their amounts
               finalizedAccountOps.length
                 ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
+                : undefined,
+              // Refreshes the limit orders whose permission was given back, without waiting
+              // for their next scheduled refresh
+              finalizedAccountOps.length
+                ? this.limitOrders.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the

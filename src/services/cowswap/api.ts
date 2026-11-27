@@ -2,15 +2,19 @@ import { getAddress, isAddress, keccak256, toUtf8Bytes, ZeroAddress } from 'ethe
 
 import {
   buildAppData,
+  buildLimitOrderAppData,
   computeOrderUid,
   ethFlowInterface,
   getApiNetwork,
   getCowSwapOrderStruct,
   getNetworkCostSlippageBps,
+  getOpenLimitOrdersSellAmount,
   getOutputValueInUsd,
   getPriceSlippageBps,
   getProtocolFeeAmount,
   getWrappedNativeTokenAddress,
+  isAmbireLimitOrderAppData,
+  isCowSwapAccountOrder,
   isCowSwapTokenListEntry,
   normalizeBuyTokenAddress,
   normalizeCowSwapToken,
@@ -18,6 +22,7 @@ import {
   settlementInterface
 } from '@/services/cowswap/helper'
 import {
+  CowSwapAccountOrder,
   CowSwapErrorResponse,
   CowSwapOrderResponse,
   CowSwapTokenListEntry,
@@ -50,6 +55,7 @@ import {
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
+  COWSWAP_ACCOUNT_ORDERS_PAGE_SIZE,
   COWSWAP_API_BASE_URL,
   COWSWAP_BFF_BASE_URL,
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
@@ -64,6 +70,27 @@ import {
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
+
+/**
+ * How long a swap reuses the account's limit orders fetched before, see
+ * `#getSwapMinimumApprovalAmount`. The limit order screens fetch them again on their own
+ */
+const SWAP_ACCOUNT_LIMIT_ORDERS_MAX_AGE_MS = 60 * 1000
+
+const getAccountLimitOrdersCacheKey = (chainId: number, owner: string) =>
+  `${chainId}:${owner.toLowerCase()}`
+
+/** How long after it's created an order still waiting for its transaction may soon open */
+const RECENTLY_SENT_ORDER_MAX_AGE_MS = 10 * 60 * 1000
+
+/**
+ * An order placed moments ago, whose transaction may be confirmed any time. It's not open yet,
+ * so a swap asks about the orders again rather than reuse them, or it would leave it out. One
+ * whose transaction was never sent stays like this until it expires, so only recent ones count
+ */
+const isRecentlySentOrder = (order: CowSwapAccountOrder) =>
+  order.status === 'presignaturePending' &&
+  Date.now() - new Date(order.creationDate).getTime() < RECENTLY_SENT_ORDER_MAX_AGE_MS
 
 export class CowSwapAPI implements SwapProvider {
   id = 'cowswap'
@@ -96,6 +123,13 @@ export class CowSwapAPI implements SwapProvider {
     string,
     { expiresAt: number; slippageBps: Promise<number | null> }
   >()
+
+  /**
+   * The last fetched limit orders of each account on each network, by `chainId:owner`, kept in
+   * memory only. A swap reads them to cover their permission, and is quoted again and again, so
+   * it reuses them for a while instead of asking each time, see `#getSwapMinimumApprovalAmount`
+   */
+  #accountLimitOrdersCache = new Map<string, { fetchedAt: number; orders: CowSwapAccountOrder[] }>()
 
   isHealthy: boolean | null = null
 
@@ -748,7 +782,12 @@ export class CowSwapAPI implements SwapProvider {
       approvalData: {
         allowanceTarget: COWSWAP_VAULT_RELAYER_ADDRESS,
         approvalTokenAddress: rawRoute.order.sellToken,
-        minimumApprovalAmount: rawRoute.order.sellAmount,
+        minimumApprovalAmount: await this.#getSwapMinimumApprovalAmount({
+          chainId: route.fromChainId,
+          owner: route.userAddress,
+          sellToken: rawRoute.order.sellToken,
+          sellAmount: rawRoute.order.sellAmount
+        }),
         owner: route.userAddress
       },
       chainId: route.fromChainId,
@@ -895,5 +934,300 @@ export class CowSwapAPI implements SwapProvider {
     }
 
     return { status: 'failed' }
+  }
+
+  /**
+   * Today's market for selling `sellAmount` of `sellToken` for `buyToken`, the reference of a
+   * limit order. `sellToken` is the zero address for the native token, which is sold through
+   * the ETH-flow contract. Returns:
+   * - `marketBuyAmount` - what the sell amount gets at the market price after CoW Swap's network
+   *   cost and protocol fee, before the Ambire fee. Today's price for a limit order: the price the
+   *   user sets is compared to this one, as it's what the order really gets at that price. For a
+   *   small amount the network cost is a large share of it, so it's left in rather than added back
+   * - `buyAmount` - what the user gets after the network cost and the fees
+   * - `networkFee` (in the sell token) and `protocolFeeBps` - the costs CoW Swap takes, for
+   *   working out what a limit order gets at another price
+   */
+  async getLimitOrderMarketQuote({
+    chainId,
+    sellToken: sellTokenAddress,
+    buyToken: buyTokenAddress,
+    sellAmount,
+    owner: ownerAddress,
+    feeBps
+  }: {
+    chainId: number
+    sellToken: string
+    buyToken: string
+    sellAmount: bigint
+    owner: string
+    feeBps?: number
+  }): Promise<{
+    buyAmount: bigint
+    marketBuyAmount: bigint
+    networkFee: bigint
+    protocolFeeBps: number
+    quoteId: number | null
+  }> {
+    if (sellAmount <= 0n) {
+      throw new SwapAndBridgeProviderApiError('Unable to fetch the price. Enter an amount first.')
+    }
+    const isEthFlow = sellTokenAddress.toLowerCase() === ZeroAddress.toLowerCase()
+    const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(chainId)
+    if (isEthFlow && !wrappedNativeTokenAddress) {
+      throw new SwapAndBridgeProviderApiError(
+        'CoW Swap cannot sell the network native token on this network.'
+      )
+    }
+
+    const sellToken = getAddress(isEthFlow ? wrappedNativeTokenAddress! : sellTokenAddress)
+    const buyToken = normalizeBuyTokenAddress(buyTokenAddress)
+    const owner = getAddress(ownerAddress)
+    const { fullAppData, appDataHash } = buildLimitOrderAppData({ feeBps })
+    const quoteRequest = {
+      sellToken,
+      buyToken,
+      receiver: owner,
+      from: owner,
+      sellAmountBeforeFee: sellAmount.toString(),
+      kind: 'sell',
+      validFor: COWSWAP_ORDER_VALIDITY_SECONDS,
+      appData: fullAppData,
+      appDataHash,
+      priceQuality: 'optimal',
+      signingScheme: isEthFlow ? 'eip1271' : 'presign',
+      ...(isEthFlow ? { onchainOrder: true, verificationGasLimit: 0 } : {})
+    }
+    const response = await this.#fetchWithTimeout(this.#getApiUrl(chainId, '/quote'), {
+      method: 'POST',
+      headers: this.#apiHeaders,
+      body: JSON.stringify(quoteRequest)
+    })
+    const quoteResponse = await this.#parseResponse<CowSwapQuoteResponse>(
+      response,
+      'Unable to fetch the price.'
+    )
+    const quotedOrder = quoteResponse.quote
+    if (
+      !quotedOrder ||
+      typeof quotedOrder.sellToken !== 'string' ||
+      typeof quotedOrder.buyToken !== 'string' ||
+      typeof quotedOrder.sellAmount !== 'string' ||
+      typeof quotedOrder.buyAmount !== 'string' ||
+      typeof quotedOrder.feeAmount !== 'string' ||
+      quotedOrder.sellToken.toLowerCase() !== sellToken.toLowerCase() ||
+      quotedOrder.buyToken.toLowerCase() !== buyToken.toLowerCase() ||
+      quotedOrder.kind !== 'sell'
+    ) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to fetch the price. CoW Swap returned details that do not match your request.'
+      )
+    }
+
+    let quotedSellAmount: bigint
+    let quotedBuyAmount: bigint
+    let networkFee: bigint
+    try {
+      quotedSellAmount = BigInt(quotedOrder.sellAmount)
+      quotedBuyAmount = BigInt(quotedOrder.buyAmount)
+      networkFee = BigInt(quotedOrder.feeAmount)
+    } catch {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to fetch the price. CoW Swap returned invalid token amounts.'
+      )
+    }
+    if (quotedSellAmount + networkFee !== sellAmount || quotedSellAmount <= 0n) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to fetch the price. CoW Swap returned an unexpected spend amount.'
+      )
+    }
+
+    const protocolFeeBps = Number(quoteResponse.protocolFeeBps || 0)
+    if (!Number.isFinite(protocolFeeBps) || protocolFeeBps < 0) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to fetch the price. CoW Swap returned an invalid fee.'
+      )
+    }
+
+    // Same math as the swap quote: CoW Swap quotes the output after its network cost and
+    // protocol fee, while the Ambire fee is a share of the output before both
+    const networkFeeInBuyToken = (quotedBuyAmount * networkFee) / quotedSellAmount
+    const protocolFee = getProtocolFeeAmount(quotedBuyAmount, protocolFeeBps)
+    const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken + protocolFee
+    const partnerFee = feeBps ? (buyAmountBeforeFees * BigInt(feeBps)) / 10000n : 0n
+    const buyAmount = quotedBuyAmount - partnerFee
+
+    if (buyAmount <= 0n) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to fetch the price. The amount you would receive is too low.'
+      )
+    }
+
+    const quoteId =
+      Number.isSafeInteger(quoteResponse.id) && Number(quoteResponse.id) >= 0
+        ? Number(quoteResponse.id)
+        : null
+
+    return {
+      buyAmount,
+      marketBuyAmount: quotedBuyAmount,
+      networkFee,
+      protocolFeeBps,
+      quoteId
+    }
+  }
+
+  /**
+   * Sends a limit order to CoW Swap before the transaction that activates it. A pre-sign order
+   * waits inactive until the transaction pre-signs it. An ETH-flow order is created by its
+   * transaction, so only its app data is sent, for CoW Swap to know the Ambire fee
+   */
+  async submitLimitOrder({
+    chainId,
+    order,
+    orderUid,
+    isEthFlow
+  }: {
+    chainId: number
+    order: CowSwapOrderCreation
+    orderUid: string
+    isEthFlow: boolean
+  }): Promise<void> {
+    let computedOrderUid: string
+    try {
+      computedOrderUid = computeOrderUid({ chainId, order, owner: order.from, isEthFlow })
+    } catch {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to place the order because its details are invalid.'
+      )
+    }
+    if (computedOrderUid !== orderUid) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to place the order because its details changed.'
+      )
+    }
+    if (keccak256(toUtf8Bytes(order.appData)).toLowerCase() !== order.appDataHash.toLowerCase()) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to place the order because its details are invalid.'
+      )
+    }
+
+    if (isEthFlow) {
+      await this.#uploadAppData(chainId, order.appDataHash, order.appData)
+      return
+    }
+
+    const response = await this.#fetchWithTimeout(this.#getApiUrl(chainId, '/orders'), {
+      method: 'POST',
+      headers: this.#apiHeaders,
+      body: JSON.stringify(order)
+    })
+
+    let body: string | CowSwapErrorResponse
+    try {
+      body = await response.json()
+    } catch (error: any) {
+      const message = error?.message || 'no message'
+      throw new SwapAndBridgeProviderApiError(
+        `Unable to place the order. CoW Swap returned an unexpected response. Error details: <${message}>`
+      )
+    }
+
+    if (response.ok) {
+      if (body !== orderUid) {
+        throw new SwapAndBridgeProviderApiError(
+          'Unable to place the order because CoW Swap returned a different order.'
+        )
+      }
+      return
+    }
+
+    const errorBody = body as CowSwapErrorResponse
+    if (errorBody.errorType === 'DuplicatedOrder') return
+
+    const message =
+      errorBody.description || errorBody.message || errorBody.errorType || 'Unknown error'
+    throw new SwapAndBridgeProviderApiError(
+      `Unable to place the order. CoW Swap responded: <${message}>`
+    )
+  }
+
+  /**
+   * The limit orders `owner` placed from Ambire on `chainId`, newest first. Orders placed from
+   * other apps and Ambire swaps, which are CoW Swap orders too, are left out
+   */
+  async getAccountLimitOrders({
+    chainId,
+    owner
+  }: {
+    chainId: number
+    owner: string
+  }): Promise<CowSwapAccountOrder[]> {
+    const params = new URLSearchParams({
+      offset: '0',
+      limit: COWSWAP_ACCOUNT_ORDERS_PAGE_SIZE.toString()
+    })
+    const response = await this.#fetchWithTimeout(
+      this.#getApiUrl(chainId, `/account/${getAddress(owner)}/orders?${params.toString()}`),
+      { headers: this.#apiHeaders }
+    )
+    const orders = await this.#parseResponse<unknown>(response, 'Unable to load your orders.')
+    if (!Array.isArray(orders)) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to load your orders. CoW Swap returned an unexpected response.'
+      )
+    }
+
+    const limitOrders = orders.filter(
+      (order): order is CowSwapAccountOrder =>
+        isCowSwapAccountOrder(order) && isAmbireLimitOrderAppData(order.fullAppData)
+    )
+    this.#accountLimitOrdersCache.set(getAccountLimitOrdersCacheKey(chainId, owner), {
+      fetchedAt: Date.now(),
+      orders: limitOrders
+    })
+
+    return limitOrders
+  }
+
+  /**
+   * The permission a swap needs: its own amount, plus what the open limit orders selling the
+   * same token still sell, as they share one permission (see `getOpenLimitOrdersSellAmount`).
+   * Otherwise the swap would use up what they need and they'd stop filling. If they can't be
+   * checked, the swap still goes ahead with its own amount
+   */
+  async #getSwapMinimumApprovalAmount({
+    chainId,
+    owner,
+    sellToken,
+    sellAmount
+  }: {
+    chainId: number
+    owner: string
+    sellToken: string
+    sellAmount: string
+  }): Promise<string> {
+    try {
+      const cached = this.#accountLimitOrdersCache.get(
+        getAccountLimitOrdersCacheKey(chainId, owner)
+      )
+      const isCacheFresh =
+        !!cached &&
+        Date.now() - cached.fetchedAt < SWAP_ACCOUNT_LIMIT_ORDERS_MAX_AGE_MS &&
+        !cached.orders.some(isRecentlySentOrder)
+      const orders =
+        isCacheFresh && cached
+          ? cached.orders
+          : await this.getAccountLimitOrders({ chainId, owner })
+      const openLimitOrdersSellAmount = getOpenLimitOrdersSellAmount(orders, sellToken)
+
+      return (BigInt(sellAmount) + openLimitOrdersSellAmount).toString()
+    } catch (error) {
+      console.warn(
+        'CoW Swap: unable to check the open limit orders, asking for the swap amount only',
+        error
+      )
+      return sellAmount
+    }
   }
 }

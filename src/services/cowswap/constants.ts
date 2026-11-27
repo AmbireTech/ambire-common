@@ -119,3 +119,6 @@ export const COWSWAP_ORDER_VALIDITY_SECONDS = 30 * 60
 export const COWSWAP_APP_DATA_VERSION = '1.4.0'
 
 export const COWSWAP_APP_CODE = 'Ambire'
+
+/** How many orders of an account CoW Swap returns per request, the most it allows */
+export const COWSWAP_ACCOUNT_ORDERS_PAGE_SIZE = 1000

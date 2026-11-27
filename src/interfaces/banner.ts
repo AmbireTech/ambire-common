@@ -137,6 +137,12 @@ export type Action = (
   | {
       actionName: 'dismiss-ens-expiry-banner'
     }
+  | {
+      actionName: 'open-limit-orders-history'
+    }
+  | {
+      actionName: 'dismiss-limit-orders-filled-banner'
+    }
   | { actionName: 'open-link'; meta: { url: string } }
   | { actionName: 'survey'; meta: { surveyId: string } }
 ) & {
