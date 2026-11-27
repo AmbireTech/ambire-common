@@ -319,6 +319,14 @@ export const applyAmendments = (
       return
     }
 
+    const invalidKeys = amendment.addresses.filter((key) => !isRegistryKey(key))
+    if (invalidKeys.length) {
+      problems.push(
+        `${reference}: ${invalidKeys.join(', ')} not written as \`eip155:{chainId}:{lowercase address}\``
+      )
+      return
+    }
+
     const keys = usesInIndex(name, kind)
     if (!keys.length) {
       problems.push(

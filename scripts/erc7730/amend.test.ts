@@ -179,6 +179,20 @@ describe('applyAmendments: amends', () => {
     ).toEqual([`The amend of pool/calldata-Pool.json (test): ${NEW_KEY} no longer use it`])
   })
 
+  test('fails for listed keys not written as lookups build them', () => {
+    const checksummedKey = 'eip155:1:0xAbCdEf1111111111111111111111111111111111'
+
+    expect(
+      getProblems({
+        amendCalldataDescriptors: {
+          'pool/calldata-Pool.json': { ...fixValue, addresses: [KEY, checksummedKey, '1:0x11'] }
+        }
+      })
+    ).toEqual([
+      `The amend of pool/calldata-Pool.json (test): ${checksummedKey}, 1:0x11 not written as \`eip155:{chainId}:{lowercase address}\``
+    ])
+  })
+
   test('fails for a descriptor that no index uses, such as one only included', () => {
     expect(
       getProblems({ amendCalldataDescriptors: { 'pool/common-Pool.json': fixValue } })
