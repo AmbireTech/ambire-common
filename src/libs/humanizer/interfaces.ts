@@ -87,6 +87,11 @@ export type HumanizerVisualization = (
       tokenInfo?: { symbol: string; decimals: number }
       /** USD price of one token. When set, the UI shows the amount's USD value next to it. */
       usdPrice?: number
+      /**
+       * Only the token is meant to be shown, not an amount (ERC-7730 `tokenTicker`). `value` is
+       * then 0, which the UI already shows as the token's icon and symbol with no number
+       */
+      isTickerOnly?: boolean
     }
 ) & {
   id: number
