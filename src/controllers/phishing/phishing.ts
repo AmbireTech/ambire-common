@@ -320,6 +320,14 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
   }
 
+  #getNormalUpdateInterval() {
+    const hasActiveViewOpen = this.#ui.views.some((view) =>
+      PHISHING_ACTIVE_VIEW_TYPES.has(view.type)
+    )
+
+    return hasActiveViewOpen ? PHISHING_ACTIVE_UPDATE_INTERVAL : PHISHING_INACTIVE_UPDATE_INTERVAL
+  }
+
   #notifyListSettled() {
     Array.from(this.#listSettledListeners).forEach((settle) => settle())
   }
@@ -462,7 +470,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
 
     if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
-      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
+      this.updatePhishingInterval.updateTimeout({ timeout: this.#getNormalUpdateInterval() })
     }
 
     // NOTE: used for debugging only
