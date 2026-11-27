@@ -496,8 +496,9 @@ describe('RequestsController ', () => {
       })
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
-        .mockImplementation(async () => {
-          await stateFetchGate
+        .mockImplementation(async (_addr, blockTag) => {
+          // Only the fresh nonce is slow, the checks before the loader opens are not
+          if (blockTag === 'pending') await stateFetchGate
         })
 
       const build = buildDappTransaction(controller, {
@@ -508,7 +509,7 @@ describe('RequestsController ', () => {
       await wait(0)
       await controller.requestWindow.openWindowPromise
 
-      expect(controller.isBuildingDappRequest).toBe(true)
+      expect(controller.pendingUserRequests).toEqual([{ isClosed: false }])
       expect(updateAccountStateSpy).toHaveBeenCalledWith(
         '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         'pending',
@@ -521,7 +522,7 @@ describe('RequestsController ', () => {
       releaseStateFetch()
       await build
 
-      expect(controller.isBuildingDappRequest).toBe(false)
+      expect(controller.pendingUserRequests).toEqual([])
       expect(controller.currentUserRequest?.kind).toBe('calls')
       // The request shows in the loader's window, which never closed
       expect(controller.requestWindow.windowProps?.id).toBe(loaderWindow?.id)
@@ -534,7 +535,9 @@ describe('RequestsController ', () => {
 
     test('closes the loader window when the transaction fails to build', async () => {
       const { controller, accountsCtrl } = await prepareTest(true)
-      jest.spyOn(accountsCtrl, 'updateAccountState').mockRejectedValue(new Error('RPC is down'))
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockImplementation(async (_addr, blockTag) => {
+        if (blockTag === 'pending') throw new Error('RPC is down')
+      })
       const closeRequestWindowSpy = jest.spyOn(controller, 'closeRequestWindow')
 
       await expect(
@@ -544,13 +547,126 @@ describe('RequestsController ', () => {
           reject: jest.fn()
         })
       ).rejects.toThrow('RPC is down')
-      // The app is told first, and the window closes right after
-      expect(closeRequestWindowSpy).toHaveBeenCalledTimes(1)
-      await closeRequestWindowSpy.mock.results[0]!.value
+      expect(closeRequestWindowSpy).toHaveBeenCalled()
 
-      expect(controller.isBuildingDappRequest).toBe(false)
+      expect(controller.pendingUserRequests).toEqual([])
       expect(controller.currentUserRequest).toBe(null)
       expect(controller.requestWindow.windowProps).toBe(null)
+    })
+
+    test('does not open the loader for a transaction from an account that is not in the wallet', async () => {
+      const { controller } = await prepareTest(true)
+      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+      await expect(
+        controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'eth_sendTransaction',
+              params: [{ from: '0x0000000000000000000000000000000000000001', to: ZeroAddress }],
+              session: MOCK_SESSION
+            },
+            dappPromise: {
+              id: 'unknown-account-test',
+              resolve: jest.fn(),
+              reject: jest.fn(),
+              session: MOCK_SESSION
+            }
+          }
+        })
+      ).rejects.toThrow("isn't in your wallet")
+      expect(openRequestWindowSpy).not.toHaveBeenCalled()
+      expect(controller.pendingUserRequests).toEqual([])
+    })
+
+    test('still opens an in-wallet transaction while a closed loader is built', async () => {
+      const { controller, accountsCtrl } = await prepareTest(true)
+      let releaseStateFetch!: () => void
+      const stateFetchGate = new Promise<void>((resolve) => {
+        releaseStateFetch = resolve
+      })
+      jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockImplementation(async (_addr, blockTag, networks) => {
+          if (blockTag === 'pending' && networks?.includes(1n)) await stateFetchGate
+        })
+
+      const build = buildDappTransaction(controller, {
+        id: 'closed-loader-in-wallet-test',
+        resolve: jest.fn(),
+        reject: jest.fn()
+      })
+      await wait(0)
+      await controller.requestWindow.openWindowPromise
+      await controller.closeRequestWindow()
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'open-request-window',
+          userRequestParams: {
+            calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+            meta: { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', chainId: 10n }
+          }
+        }
+      })
+
+      expect(controller.currentUserRequest?.meta.chainId).toBe(10n)
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+
+      releaseStateFetch()
+      await build
+      await controller.rejectUserRequests(
+        'Test cleanup',
+        controller.userRequests.map(({ id }) => id)
+      )
+    })
+
+    test('queues the transaction when the user closes the loader while it is built', async () => {
+      const { controller, accountsCtrl, uiCtrl } = await prepareTest(true)
+      let releaseStateFetch!: () => void
+      const stateFetchGate = new Promise<void>((resolve) => {
+        releaseStateFetch = resolve
+      })
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockImplementation(async (_addr, blockTag) => {
+        if (blockTag === 'pending') await stateFetchGate
+      })
+
+      const build = buildDappTransaction(controller, {
+        id: 'closed-loader-test',
+        resolve: jest.fn(),
+        reject: jest.fn()
+      })
+      await wait(0)
+      await controller.requestWindow.openWindowPromise
+      expect(controller.pendingUserRequests).toEqual([{ isClosed: false }])
+
+      await controller.closeRequestWindow()
+      expect(controller.requestWindow.windowProps).toBe(null)
+      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+      const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+      releaseStateFetch()
+      await build
+
+      expect(controller.pendingUserRequests).toEqual([])
+      expect(controller.userRequests.map(({ kind }) => kind)).toEqual(['calls'])
+      expect(controller.currentUserRequest).toBe(null)
+      expect(controller.requestWindow.windowProps).toBe(null)
+      expect(openRequestWindowSpy).not.toHaveBeenCalled()
+      expect(createNotification.mock.calls).toEqual([
+        [
+          {
+            title: 'Transaction queued',
+            message: 'Queued pending transactions are available on your Dashboard.'
+          }
+        ]
+      ])
+
+      await controller.rejectUserRequests(
+        'Test cleanup',
+        controller.userRequests.map(({ id }) => id)
+      )
     })
   })
 

@@ -305,6 +305,9 @@ export type UserRequestWaitingAccountSwitch =
 
 export type RequestPosition = 'first' | 'last'
 
+/** A request whose window shows a loader until it is built, and whether the user closed it */
+export type PendingUserRequest = { isClosed: boolean }
+
 export type RequestExecutionType = 'queue' | 'queue-but-open-request-window' | 'open-request-window'
 
 export type OpenRequestWindowParams = {

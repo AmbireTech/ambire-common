@@ -76,6 +76,7 @@ import {
   HeldDappRequest,
   OpenRequestWindowParams,
   PendingDappPromise,
+  PendingUserRequest,
   PlainTextMessageUserRequest,
   RequestExecutionType,
   RequestPosition,
@@ -153,6 +154,8 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+/** How long a new calls request waits for a fresh account state before it uses the saved one */
+const ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS = 5000
 
 /** Dapp requests whose screen warns about the app, without a signing controller doing it */
 const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
@@ -322,15 +325,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #userRequestsBeingAdded = 0
 
   /**
-   * Whether an app's transaction is being built. The request window shows a loader meanwhile
-   * and stays open while it has no request.
+   * Requests that can't be added yet, because building them needs async work first (an app's
+   * transaction waits for the account state). The request window shows a loader for them. If the
+   * user closes it meanwhile, the request is handled as closed once it is built.
    */
-  isBuildingDappRequest = false
-
-  #dappRequestsBeingBuilt = 0
-
-  /** Requests whose account state was fetched while they were built, so adding them can skip it */
-  #requestsWithFreshAccountState = new WeakSet<UserRequest>()
+  pendingUserRequests: PendingUserRequest[] = []
 
   /**
    * Set only while the wallet is closing a request window itself. Closing it fires
@@ -677,8 +676,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           continue
         }
 
-        const accountState = await this.#getAccountStateForCallsRequest(
-          req,
+        const accountState = await this.#accounts.getOrFetchAccountOnChainState(
           meta.accountAddr,
           meta.chainId
         )
@@ -1058,22 +1056,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
-   * The account state a calls request starts with. A request built from an app's transaction
-   * already waited for a fresh state, so it's read from the saved states without a second fetch.
-   */
-  async #getAccountStateForCallsRequest(
-    req: UserRequest,
-    accountAddr: string,
-    chainId: bigint
-  ): Promise<AccountOnchainState | undefined> {
-    const wasFetchedWhileBuilt = this.#requestsWithFreshAccountState.delete(req)
-    if (wasFetchedWhileBuilt) return this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
-
-    return this.#getAccountStateWithFallback(accountAddr, chainId)
-  }
-
-  /**
-   * Tries to update the account state for 2 seconds. If that fails, uses the previous account
+   * Tries to update the account state for ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS. If that
+   * fails, uses the previous account
    * state if it exists, otherwise waits for the fetch to complete (no matter how long it takes).
    * This is done in an attempt to always have the latest nonce, but without blocking the UI for
    * too long if the RPC is slow to respond.
@@ -1093,7 +1077,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       accountStateBefore
         ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
           new Promise<AccountOnchainState | undefined>((res) => {
-            fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
+            fallbackTimeoutId = setTimeout(
+              () => res(accountStateBefore),
+              ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS
+            )
           })
         : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
     ])
@@ -1102,29 +1089,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return accountState
   }
 
-  /**
-   * Marks an app's transaction as being built and opens the request window, which shows a loader
-   * until the transaction is ready.
-   */
-  #startDappRequestBuild(baseWindowId?: number) {
-    this.#dappRequestsBeingBuilt += 1
-    if (this.isBuildingDappRequest) return
+  /** Tells the user that the transactions waiting to be opened stay in the queue. */
+  async #notifyQueuedTransactions() {
+    // Signed Safe transactions were already waiting in the queue, so they don't count as new
+    const callsCount = this.#autoTriggerUserRequests.reduce((acc, request) => {
+      if (request.kind !== 'calls') return acc
 
-    this.isBuildingDappRequest = true
-    this.emitUpdate()
-    void this.openRequestWindow({ baseWindowId })
+      return acc + (request.signAccountOp.accountOp.calls?.length || 0)
+    }, 0)
+
+    if (!callsCount) return
+
+    await this.#ui.notification.create({
+      title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
+      message: 'Queued pending transactions are available on your Dashboard.'
+    })
   }
 
-  async #endDappRequestBuild() {
-    this.#dappRequestsBeingBuilt -= 1
-    if (this.#dappRequestsBeingBuilt) return
-
-    this.isBuildingDappRequest = false
+  /** Drops a request that is no longer pending. The loader window closes if nothing opened. */
+  async #removePendingUserRequest(pending: PendingUserRequest) {
+    this.pendingUserRequests = this.pendingUserRequests.filter((p) => p !== pending)
     this.emitUpdate()
-
-    // The loader window closes if the build added no request to show
-    if (this.currentUserRequest) return
-    await this.#setCurrentUserRequest(null)
+    if (!this.currentUserRequest) await this.#setCurrentUserRequest(null)
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
@@ -1159,12 +1145,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    // The request window shows a loader until the app's transaction is built
-    if (this.isBuildingDappRequest) return
-
-    // Don't close the request window if there are still requests to open automatically or if a
-    // request is being added. Signed Safe transactions don't count, as they open only when picked.
-    if (this.#autoTriggerUserRequests.length || this.#userRequestsBeingAdded) return
+    // Don't close the request window if there are still requests to open automatically, if a
+    // request is being added or if it shows the loader of a pending request. Signed Safe
+    // transactions don't count, as they open only when picked.
+    if (
+      this.#autoTriggerUserRequests.length ||
+      this.#userRequestsBeingAdded ||
+      this.pendingUserRequests.some((p) => !p.isClosed)
+    )
+      return
 
     await this.closeRequestWindow()
   }
@@ -1380,21 +1369,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
-      await this.#setCurrentUserRequest(null)
-
-      // Signed Safe transactions were already waiting in the queue, so they don't count as new
-      const callsCount = this.#autoTriggerUserRequests.reduce((acc, request) => {
-        if (request.kind !== 'calls') return acc
-
-        return acc + (request.signAccountOp.accountOp.calls?.length || 0)
-      }, 0)
-
-      if (callsCount) {
-        await this.#ui.notification.create({
-          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
-          message: 'Queued pending transactions are available on your Dashboard.'
+      if (isUserInitiatedClose) {
+        this.pendingUserRequests.forEach((p) => {
+          p.isClosed = true
         })
       }
+      await this.#setCurrentUserRequest(null)
+
+      await this.#notifyQueuedTransactions()
 
       for (const r of this.userRequests) {
         // A prompt holding app requests is rejected with the view instead, as are its requests
@@ -2628,7 +2610,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async #buildDappCallsBatch(batch: DappRequestQueueItem[]) {
     const [{ request: firstRequest, dapp }] = batch as [DappRequestQueueItem]
 
-    this.#startDappRequestBuild(firstRequest.session.windowId)
     try {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -2684,6 +2665,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const last = built[built.length - 1]!
 
+      // The window opens with a loader only from here, so a payload that is turned away never
+      // flashes it
       await this.#addCallsUserRequest(
         {
           calls: built.flatMap(({ params }) => params.calls),
@@ -2693,15 +2676,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           dappPromises: built.map(({ params }) => params.dappPromise),
           dappSessionId: last.item.request.session.sessionId
         },
-        { allowAccountSwitch: true }
+        { allowAccountSwitch: true, baseWindowId: firstRequest.session.windowId }
       )
 
       built.forEach(({ item }) => item.settle())
     } catch (error) {
       // Nothing was built, so every app in the batch is told the same thing
       batch.forEach((item) => item.fail(error))
-    } finally {
-      await this.#endDappRequestBuild()
     }
   }
 
@@ -3873,6 +3854,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }: {
       executionType?: RequestExecutionType
       allowAccountSwitch?: boolean
+      baseWindowId?: number
       position?: RequestPosition
       skipFocus?: boolean
     } = {}
@@ -3915,11 +3897,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (speedUpKey && this.#speedUpsBeingBuilt.has(speedUpKey)) return
     if (speedUpKey) this.#speedUpsBeingBuilt.add(speedUpKey)
 
+    // An app's transaction waits for the account state, so its window opens with a loader now
+    let pending: PendingUserRequest | undefined
+    if (params.dappPromises?.length) {
+      pending = { isClosed: false }
+      this.pendingUserRequests.push(pending)
+      this.emitUpdate()
+      void this.openRequestWindow({
+        baseWindowId: addOptions.baseWindowId,
+        skipFocus: addOptions.skipFocus
+      })
+    }
+
     try {
       const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
-      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+      if (!userRequest) return
+
+      // Closing the loader keeps the request in the queue, as closing its window would
+      let addExecutionType = executionType
+      if (pending?.isClosed) {
+        userRequest.signAccountOp.pause()
+        addExecutionType = 'queue'
+      }
+      await this.addUserRequests([userRequest], { executionType: addExecutionType, ...addOptions })
+      if (pending?.isClosed) await this.#notifyQueuedTransactions()
     } finally {
       if (speedUpKey) this.#speedUpsBeingBuilt.delete(speedUpKey)
+      if (pending) await this.#removePendingUserRequest(pending)
     }
   }
 
@@ -4190,10 +4194,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
 
-      // Always waits for the fresh state, so the request starts with the latest nonce. A failed
-      // fetch keeps the previous state, which the request then uses.
-      await this.#accounts.updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
-      const accountState = this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]
+      // Waits for the fresh state, so the request starts with the latest nonce, unless the fetch
+      // is slow and a saved state exists, which the request then uses.
+      const accountState = await this.#getAccountStateWithFallback(meta.accountAddr, meta.chainId)
 
       if (!accountState) {
         this.emitError({
@@ -4316,8 +4319,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         dappPromises
       } as CallsUserRequest
-
-      this.#requestsWithFreshAccountState.add(callUserRequest)
 
       if (accountOpNonce !== undefined) callUserRequest.signAccountOp.setSafeNonce(accountOpNonce)
 
