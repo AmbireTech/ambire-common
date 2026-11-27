@@ -1001,7 +1001,9 @@ export class MainController extends EventEmitter implements IMainController {
         defiMaxDataAgeMs: THIRTY_MINUTES
       })
 
-      this.accounts.refreshOutdatedAccountState(selectedAccountAddr)
+      this.accounts.updateAccountState(selectedAccountAddr, 'latest', [], {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
     }
   }
 
@@ -2160,7 +2162,7 @@ export class MainController extends EventEmitter implements IMainController {
                 accountAddr,
                 'latest',
                 networks.map((net) => net.chainId),
-                true
+                { force: true }
               )
 
               // Schedule an update that will refetch new defi positions (if any)
@@ -2191,12 +2193,9 @@ export class MainController extends EventEmitter implements IMainController {
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the
                 // account state goes first for the same reason as above
-                await this.accounts.updateAccountState(
-                  portfolioAccountAddr,
-                  'latest',
-                  chainIds,
-                  true
-                )
+                await this.accounts.updateAccountState(portfolioAccountAddr, 'latest', chainIds, {
+                  force: true
+                })
                 await this.portfolio.updateSelectedAccount(
                   portfolioAccountAddr,
                   this.networks.networks.filter((n) => chainIds.includes(n.chainId))
@@ -2318,7 +2317,7 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all(
       // Forced, as a fetch that started before the removal would still count the key
       accountsWithKey.map((account) =>
-        this.accounts.updateAccountState(account.addr, 'latest', [], true)
+        this.accounts.updateAccountState(account.addr, 'latest', [], { force: true })
       )
     )
 

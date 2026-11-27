@@ -1187,7 +1187,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         'pending',
         [this.accountOp.chainId],
-        true
+        { force: true }
       )
       await this.#simulateAndEstimate()
     } catch (error) {
@@ -2633,7 +2633,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         'pending',
         [this.accountOp.chainId],
-        true
+        { force: true }
       )
       const pendingAccountState =
         this.#accounts.accountStates[this.accountOp.accountAddr]?.[
@@ -4572,12 +4572,9 @@ export class SignAccountOpController
       if (newEstimate instanceof Error) {
         if (counter === 0) {
           await this.#accounts
-            .updateAccountState(
-              this.accountOp.accountAddr,
-              'pending',
-              [this.accountOp.chainId],
-              true
-            )
+            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+              force: true
+            })
 
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
@@ -4710,7 +4707,9 @@ export class SignAccountOpController
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+          force: true
+        })
 
         .catch((e) => console.error(e))
     }
@@ -5930,7 +5929,9 @@ export class SignAccountOpController
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+            force: true
+          })
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (isUnderpriced(getBroadcastServiceErrorMessage(_err))) {
@@ -5959,7 +5960,9 @@ export class SignAccountOpController
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+            force: true
+          })
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }

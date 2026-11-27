@@ -1169,7 +1169,7 @@ describe('SignAccountOp Controller ', () => {
         controller.accountOp.accountAddr,
         'pending',
         [controller.accountOp.chainId],
-        true
+        { force: true }
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })
@@ -4980,7 +4980,9 @@ describe('broadcasting a batch one transaction at a time', () => {
       expect(() =>
         controller.throwBroadcastAccountOp({ error: nodeError('nonce too low') })
       ).toThrow('Pending transaction detected. Please try again in a few seconds')
-      expect(updateAccountState).toHaveBeenCalledWith(eoaAccount.addr, 'pending', [1n], true)
+      expect(updateAccountState).toHaveBeenCalledWith(eoaAccount.addr, 'pending', [1n], {
+        force: true
+      })
     })
   })
 

@@ -6,7 +6,6 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
-import { ACCOUNT_DATA_REFRESH_AGE } from '../../consts/account'
 import {
   SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
   VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL
@@ -235,38 +234,37 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * `getPendingBlockTagIfSupported`.
    * - Pass `force` when a transaction or a nonce error changed the
    * state, so a fetch that started before the call is not enough.
+   * - Pass `maxDataAgeMs` to skip the networks whose state is newer than it. The saved state
+   * doesn't keep its block tag, so don't use it when the result must count pending transactions.
    */
   async updateAccountState(
     accountAddr: Account['addr'],
     blockTag: AccountStateBlockTag = 'latest',
     networks: bigint[] = [],
-    force = false
+    { force = false, maxDataAgeMs }: { force?: boolean; maxDataAgeMs?: number } = {}
   ) {
     await this.initialLoadPromise
 
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
-    await this.updateAccountStates([accountData], blockTag, networks, force)
-  }
 
-  /**
-   * Fetches the state of an account on the networks where it is missing or older than
-   * ACCOUNT_DATA_REFRESH_AGE, so a repeated call fetches nothing.
-   */
-  async refreshOutdatedAccountState(accountAddr: Account['addr']) {
-    await this.initialLoadPromise
+    if (maxDataAgeMs === undefined) {
+      await this.updateAccountStates([accountData], blockTag, networks, force)
+      return
+    }
 
     const now = Date.now()
-    const chainIdsToFetch = this.#networks.networks
-      .map(({ chainId }) => chainId)
-      .filter((chainId) => {
-        const updatedAt = this.accountStates[accountAddr]?.[chainId.toString()]?.updatedAt
-        return !updatedAt || now - updatedAt > ACCOUNT_DATA_REFRESH_AGE
-      })
+    const requestedChainIds = networks.length
+      ? networks
+      : this.#networks.networks.map(({ chainId }) => chainId)
+    const outdatedChainIds = requestedChainIds.filter((chainId) => {
+      const updatedAt = this.accountStates[accountAddr]?.[chainId.toString()]?.updatedAt
+      return !updatedAt || now - updatedAt > maxDataAgeMs
+    })
     // An empty list would fetch every network
-    if (!chainIdsToFetch.length) return
+    if (!outdatedChainIds.length) return
 
-    await this.updateAccountState(accountAddr, 'latest', chainIdsToFetch)
+    await this.updateAccountStates([accountData], blockTag, outdatedChainIds, force)
   }
 
   /**
