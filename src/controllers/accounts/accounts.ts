@@ -645,16 +645,22 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     return this.accountStates[addr]
   }
 
-  // Get the account state or in the rare case of it being undefined,
-  // fetch it.
-  // This is a precaution method as we had bugs in the past where we assumed
-  // the account state to be fetched only for it to haven't been.
-  // This ensures production doesn't blow up and it 99.9% of cases it
-  // should not call the promise
+  /**
+   * Returns the saved account state of a network, fetching it in the rare case it is missing.
+   * A precaution, as code has assumed in the past that the state was fetched when it wasn't. With
+   * `maxDataAgeMs` it also fetches a saved state older than that, joining a fetch that is already
+   * running, and returns a younger one at once. Undefined when the state couldn't be fetched.
+   */
   async getOrFetchAccountOnChainState(
     addr: string,
-    chainId: bigint
+    chainId: bigint,
+    { maxDataAgeMs }: { maxDataAgeMs?: number } = {}
   ): Promise<AccountOnchainState | undefined> {
+    if (maxDataAgeMs !== undefined) {
+      await this.updateAccountState(addr, 'latest', [chainId], { maxDataAgeMs })
+      return this.accountStates[addr]?.[chainId.toString()]
+    }
+
     if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
     }

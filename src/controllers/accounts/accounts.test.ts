@@ -457,6 +457,39 @@ describe('AccountsController account state fetching', () => {
     })
   })
 
+  describe('getOrFetchAccountOnChainState with maxDataAgeMs', () => {
+    const setSavedState = (age: number) => {
+      ctrl.accountsCtrl.accountStates[ADDR_A] = {
+        [BASE.chainId.toString()]: { ...makeAccountState(ADDR_A, 10n), updatedAt: Date.now() - age }
+      }
+    }
+
+    test('refetches and returns a saved state that is older than maxDataAgeMs', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      setSavedState(ACCOUNT_DATA_REFRESH_AGE + 1000)
+
+      const read = accountsCtrl.getOrFetchAccountOnChainState(ADDR_A, BASE.chainId, {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      await flushPromises()
+      expect(fetches.map(({ chainId }) => chainId)).toEqual([BASE.chainId])
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+
+      expect((await read)?.currentBlock).toBe(11n)
+    })
+
+    test('returns a fresh saved state without a fetch', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      setSavedState(0)
+
+      const state = await accountsCtrl.getOrFetchAccountOnChainState(ADDR_A, BASE.chainId, {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      expect(fetches).toHaveLength(0)
+      expect(state?.currentBlock).toBe(10n)
+    })
+  })
+
   describe('getLatestAccountNonce', () => {
     test('reads the nonce on the latest block, not from the saved states', async () => {
       const { accountsCtrl, fetches } = ctrl
