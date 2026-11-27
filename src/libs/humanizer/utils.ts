@@ -301,7 +301,8 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
 export function getToken(
   _address: string,
   amount: bigint,
-  chainId?: bigint
+  chainId?: bigint,
+  { isTickerOnly }: { isTickerOnly?: boolean } = {}
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
   return {
@@ -309,7 +310,8 @@ export function getToken(
     address,
     value: BigInt(amount),
     id: randomId(),
-    chainId
+    chainId,
+    ...(isTickerOnly && { isTickerOnly })
   }
 }
 export function getTokenWithChain(
