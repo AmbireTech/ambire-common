@@ -342,8 +342,12 @@ const getSummary = ({
     ...formatList('Changed descriptors', descriptorChanges.changed, format),
     ...formatList('Removed descriptors', descriptorChanges.removed, format),
     ...formatList("Ambire's changes", notes, format, { asCode: false }),
-    '',
-    'Transactions and messages of removed contracts are no longer described with ERC-7730.'
+    ...(calldataChanges.removed.length || eip712Changes.removed.length
+      ? [
+          '',
+          'Transactions and messages of removed contracts are no longer described with ERC-7730.'
+        ]
+      : [])
   ].join('\n')
 }
 
