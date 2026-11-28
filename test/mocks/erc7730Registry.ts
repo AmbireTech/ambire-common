@@ -13,3 +13,19 @@ export const EMPTY_ERC7730_REGISTRY: Erc7730Registry = {
   eip712Index: {},
   descriptors: {}
 }
+
+/**
+ * The registry with the supported `$schema` declared on every descriptor that declares none, so
+ * that test descriptors don't each have to. A descriptor's own `$schema` is kept
+ */
+export const declareSupportedSchema = (registry: Erc7730Registry): Erc7730Registry => ({
+  ...registry,
+  descriptors: Object.fromEntries(
+    Object.entries(registry.descriptors).map(([path, descriptor]) => [
+      path,
+      descriptor && typeof descriptor === 'object'
+        ? { $schema: '../../specs/erc7730-v2.schema.json', ...descriptor }
+        : descriptor
+    ])
+  )
+})

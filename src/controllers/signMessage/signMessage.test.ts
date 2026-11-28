@@ -2,6 +2,8 @@ import { Wallet, ZeroAddress } from 'ethers'
 
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { declareSupportedSchema } from '../../../test/mocks/erc7730Registry'
+
 import {
   blacklistedDapp,
   customDapp,
@@ -146,7 +148,11 @@ const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 
 const makeErc7730Controller = (registry: Erc7730Registry, providers?: IProvidersController) =>
-  new Erc7730Controller({ registry, providers, ui: uiCtrl })
+  new Erc7730Controller({
+    registry: declareSupportedSchema(registry),
+    providers,
+    ui: uiCtrl
+  })
 
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController

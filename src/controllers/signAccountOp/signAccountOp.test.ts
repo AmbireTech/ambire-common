@@ -37,7 +37,7 @@ import {
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
-import { EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
+import { declareSupportedSchema, EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -835,7 +835,7 @@ const init = async (
   // the registry they pass
   const erc7730 = new Erc7730Controller({
     // Not the bundled registry, whose descriptors change with every refresh
-    registry: options?.erc7730Registry || EMPTY_ERC7730_REGISTRY,
+    registry: declareSupportedSchema(options?.erc7730Registry || EMPTY_ERC7730_REGISTRY),
     providers: options?.erc7730Providers,
     ui: ui
   })

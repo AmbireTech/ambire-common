@@ -453,6 +453,12 @@ describe('resolveIncludePath', () => {
     expect(resolveIncludePath('commön.json', PARENT_PATH)).toBe('/registry/morpho/commön.json')
   })
 
+  test('does not follow a URL, only files of the registry', () => {
+    expect(resolveIncludePath('https://example.com/common.json', PARENT_PATH)).toBe(
+      '/registry/morpho/https:/example.com/common.json'
+    )
+  })
+
   test('never goes above the root of the registry', () => {
     expect(resolveIncludePath('../../../../../outside.json', PARENT_PATH)).toBe('/outside.json')
   })

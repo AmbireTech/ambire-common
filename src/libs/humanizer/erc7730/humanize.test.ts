@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { encodeFunctionData, maxUint256, parseAbi } from 'viem'
+import { encodeFunctionData, getAddress, maxUint256, parseAbi } from 'viem'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
@@ -275,6 +275,78 @@ describe('encrypted values', () => {
   })
 })
 
+describe('conditional visibility rules', () => {
+  const getRowLabelsWithRule = (path: string, visible: Erc7730Field['visible']) => {
+    const humanizedCall = humanizeCallWithErc7730(
+      depositCall,
+      8453n as AccountOp['chainId'],
+      RECEIVER,
+      {
+        descriptor: {
+          display: {
+            formats: {
+              'deposit(uint256 assets, address receiver)': {
+                intent: 'Deposit',
+                fields: [
+                  { path, label: 'Checked value', format: 'raw', visible },
+                  { path: 'receiver', label: 'Send shares to', format: 'addressName' }
+                ]
+              }
+            }
+          }
+        },
+        path: 'registry/example/calldata-vault.json'
+      },
+      'ETH'
+    )
+
+    const visualization = humanizedCall?.fullVisualization?.[0]
+
+    return visualization?.type === 'erc7730' ? visualization.fields.map(getErc7730RowLabel) : null
+  }
+
+  const APPLIES = ['Send shares to']
+  const DOES_NOT_APPLY = null
+
+  test.each(['mustMatch', 'mustBe'] as const)(
+    'applies the descriptor and hides the field when a `%s` value matches',
+    (rule) => {
+      expect(getRowLabelsWithRule('assets', { [rule]: [5, 1000000] })).toEqual(APPLIES)
+    }
+  )
+
+  test.each(['mustMatch', 'mustBe'] as const)(
+    'does not apply the descriptor when no `%s` value matches',
+    (rule) => {
+      expect(getRowLabelsWithRule('assets', { [rule]: [5, 1000001] })).toBe(DOES_NOT_APPLY)
+    }
+  )
+
+  test('matches a number written as a string', () => {
+    expect(getRowLabelsWithRule('assets', { mustMatch: ['1000000'] })).toEqual(APPLIES)
+  })
+
+  test('matches an address in any letter case', () => {
+    const checksummedReceiver = getAddress(RECEIVER)
+
+    expect(getRowLabelsWithRule('receiver', { mustMatch: [checksummedReceiver] })).toEqual(APPLIES)
+  })
+
+  test('does not apply the descriptor when the checked value is missing', () => {
+    expect(getRowLabelsWithRule('missing', { mustMatch: ['0x'] })).toBe(DOES_NOT_APPLY)
+  })
+
+  test('hides a number that `ifNotIn` lists', () => {
+    expect(getRowLabelsWithRule('assets', { ifNotIn: [1000000] })).toEqual(APPLIES)
+  })
+
+  test('shows a number that `ifNotIn` does not list', () => {
+    expect(getRowLabelsWithRule('assets', { ifNotIn: [0] })).toEqual([
+      'Checked value',
+      'Send shares to'
+    ])
+  })
+})
 describe('token tickers', () => {
   const bridgeAbi = parseAbi(['function bridge(address token, uint256 amount)'])
   const NATIVE_E_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'

@@ -117,10 +117,14 @@ const toBigIntOrNull = (value: unknown): bigint | null => {
   return null
 }
 
-const normalizeComparableValue = (value: unknown): string | number | boolean | null => {
-  if (typeof value === 'bigint') return value.toString()
+/**
+ * Numbers are compared as text, since a decoded transaction holds them as a `bigint` while a
+ * descriptor writes them as a number or as a string
+ */
+const normalizeComparableValue = (value: unknown): string | boolean | null => {
+  if (typeof value === 'bigint' || typeof value === 'number') return value.toString()
   if (typeof value === 'string') return value.toLowerCase()
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (typeof value === 'boolean' || value === null) return value
 
   return String(value)
 }
@@ -132,10 +136,11 @@ const getVisibility = (rule: Erc7730VisibleRule | undefined, value: unknown): Vi
   if (!rule || rule === 'always' || rule === 'optional') return { visible: true, valid: true }
   if (rule === 'never') return { visible: false, valid: true }
 
-  if (rule.mustBe) {
+  const requiredValues = rule.mustMatch ?? rule.mustBe
+  if (requiredValues) {
     return {
       visible: false,
-      valid: rule.mustBe.some((expectedValue) => matchesPrimitive(value, expectedValue))
+      valid: requiredValues.some((expectedValue) => matchesPrimitive(value, expectedValue))
     }
   }
 
@@ -761,8 +766,8 @@ const getNestedErc7730CalldataValue = (
   }
   context.collectedNestedCalls?.push(nestedCall)
 
-  // The descriptor of the contract the embedded call actually goes to, fetched for it by the
-  // registry. The descriptor of the call that carries it stands in only when both go to the same
+  // The descriptor of the contract the embedded call actually goes to, looked up for it through
+  // the registry. The descriptor of the call that carries it stands in only when both go to the same
   // contract, which is the one case where it describes the embedded call too. For any other
   // contract the embedded call is left to the plain humanizer modules further down, rather than
   // described by a format of an unrelated contract that happens to share a selector.
@@ -1660,7 +1665,7 @@ export const humanizeCallWithErc7730 = (
   nativeAssetSymbol?: string,
   /**
    * Set only by the registry, which runs the formatting to find out which calls are embedded in
-   * this one so it can fetch a descriptor for each of them.
+   * this one so it can ask for a descriptor for each of them.
    */
   collectedNestedCalls?: Call[]
 ): IrCall | null => {

@@ -10,11 +10,13 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
   ERC7730_DESCRIPTOR_WAIT_MS,
   SAFE_PROXY_SINGLETON_SLOT,
-  SAFE_SINGLETON_CACHE_TTL_MS
+  SAFE_SINGLETON_CACHE_TTL_MS,
+  SUPPORTED_ERC7730_SCHEMA_FILES
 } from '../../libs/humanizer/erc7730/consts'
 import {
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
+  getSchemaFileName,
   normalizeDescriptorPath,
   planErc7730MessageWants,
   planErc7730Wants,
@@ -62,7 +64,7 @@ export class Erc7730Controller extends EventEmitter {
 
   /**
    * The descriptors looked up so far, by their path in the registry: the descriptor once it passed
-   * validation, or null if it is missing or invalid
+   * validation, or null if it is missing, unsupported or invalid
    */
   #descriptors = new Map<string, Erc7730Descriptor | null>()
 
@@ -94,15 +96,24 @@ export class Erc7730Controller extends EventEmitter {
   // Answering wants
   //
 
-  /** A descriptor by its path in the registry. Throws if it isn't there or isn't valid */
+  /**
+   * A descriptor by its path in the registry. Throws if it isn't there, is of a version of
+   * ERC-7730 the wallet doesn't support or isn't valid. The errors don't name the path: they are reported, and it would tell which contract the user was about
+   * to use
+   */
   #readDescriptor(registryPath: string): Erc7730Descriptor {
     const descriptor = getOwn(this.#registry.descriptors, registryPath)
     if (descriptor === undefined) {
-      throw new Error(`ERC-7730 descriptor not in the registry: ${registryPath}`)
+      throw new Error('An ERC-7730 descriptor is not in the registry')
+    }
+    // Checked before the shape, so that a newer version is reported as such, not as invalid
+    const schemaFileName = getSchemaFileName(descriptor)
+    if (!schemaFileName || !SUPPORTED_ERC7730_SCHEMA_FILES.has(schemaFileName)) {
+      throw new Error(`Unsupported ERC-7730 schema: ${schemaFileName ?? 'none declared'}`)
     }
     // Throws if the descriptor is invalid
-    if (!validateDescriptor(descriptor, registryPath)) {
-      throw new Error(`Invalid ERC-7730 descriptor: ${registryPath}`)
+    if (!validateDescriptor(descriptor)) {
+      throw new Error('An ERC-7730 descriptor is invalid')
     }
 
     return descriptor
@@ -110,7 +121,7 @@ export class Erc7730Controller extends EventEmitter {
 
   /**
    * A descriptor by the path the registry wrote it with, validated the first time it is used, or
-   * null if it isn't in the registry or isn't valid. That is reported only the first time, as the
+   * null if it isn't in the registry, isn't of a supported version or isn't valid. That is reported only the first time, as the
    * calls of an accountOp are humanized again on every update of it.
    */
   #getDescriptor(pathOrUrl: string): Erc7730Descriptor | null {

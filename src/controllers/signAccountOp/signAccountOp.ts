@@ -1854,7 +1854,7 @@ export class SignAccountOpController
 
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
+      lookUpDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>

@@ -4,6 +4,15 @@ export const SAFE_SINGLETON_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000 // 14 days
 // the max time we wait to visualize erc-7730 before going to the fallback
 export const ERC7730_DESCRIPTOR_WAIT_MS = 4000
 
+/**
+ * The versions of ERC-7730 the wallet can show, by the file name of the `$schema` a descriptor
+ * declares. A descriptor of any other version, or of none, is not used: it can hold rules the
+ * wallet would silently ignore. Add a version only once the humanizer supports it
+ */
+export const SUPPORTED_ERC7730_SCHEMA_FILES: ReadonlySet<string> = new Set([
+  'erc7730-v2.schema.json'
+])
+
 export const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 export const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
 export const PERMIT2_APPROVE_SELECTOR = '0x87517c45'

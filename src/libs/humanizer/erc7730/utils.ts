@@ -8,19 +8,6 @@ import { SAFE_TX_PRIMARY_TYPE } from './consts'
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export const isHexChar = (value: string) => {
-  const charCode = value.charCodeAt(0)
-
-  return (
-    (charCode >= 48 && charCode <= 57) ||
-    (charCode >= 65 && charCode <= 70) ||
-    (charCode >= 97 && charCode <= 102)
-  )
-}
-
-export const isHexOfLength = (value: string, hexLength: number) =>
-  value.startsWith('0x') && value.length === hexLength + 2 && [...value.slice(2)].every(isHexChar)
-
 export const parseIntegerLiteral = (value: string): number | null => {
   if (!value) return null
 

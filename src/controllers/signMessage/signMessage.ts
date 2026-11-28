@@ -441,7 +441,7 @@ export class SignMessageController
 
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: async () => erc7730.getDescriptorForMessage(messageToSign),
+      lookUpDescriptor: async () => erc7730.getDescriptorForMessage(messageToSign),
       applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
         if (!erc7730Descriptor) return false
 

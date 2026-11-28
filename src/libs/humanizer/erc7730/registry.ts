@@ -20,10 +20,8 @@ import { getEip712EncodeTypeHash } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
-  Erc7730CalldataIndex,
   Erc7730CallDescriptors,
   Erc7730Descriptor,
-  Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730Known,
@@ -36,7 +34,6 @@ import {
   getRegistryKey,
   getSafeSingletonKey,
   getSafeTxCallsFromMessage,
-  isHexOfLength,
   isPlainObject
 } from './utils'
 
@@ -56,126 +53,55 @@ const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
 
-const isDecimalString = (value: string) =>
-  !!value && [...value].every((char) => char >= '0' && char <= '9')
-
-const isRegistryKey = (key: string): boolean => {
-  const parts = key.split(':')
-
-  return (
-    parts.length === 3 &&
-    parts[0] === 'eip155' &&
-    isDecimalString(parts[1]!) &&
-    isHexOfLength(parts[2]!, 40)
-  )
+/** The message names no descriptor, as these errors are reported outside of the device */
+function throwInvalidRegistryData(): never {
+  throw new Error('Invalid ERC-7730 registry data')
 }
 
-const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
-
-function throwInvalidRegistryData(path: string): never {
-  throw new Error(`Invalid ERC-7730 registry data: ${path}`)
-}
-
-export const validateCalldataIndex = (
-  payload: unknown,
-  path: string
-): payload is Erc7730CalldataIndex => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
-
-  const index = payload
-
-  Object.entries(index).forEach(([key, value]) => {
-    if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRegistryData(path)
-  })
-
-  return true
-}
-
-const validateEip712IndexEntry = (
-  entry: unknown,
-  path: string
-): entry is Erc7730Eip712IndexEntry => {
-  if (!isPlainObject(entry)) throwInvalidRegistryData(path)
-
-  const indexEntry = entry
-  if (typeof indexEntry.path !== 'string') throwInvalidRegistryData(path)
-
-  const { encodeTypeHashes } = indexEntry
-  if (
-    encodeTypeHashes !== undefined &&
-    (!Array.isArray(encodeTypeHashes) ||
-      encodeTypeHashes.some((hash: unknown) => typeof hash !== 'string' || !isHexHash(hash)))
-  ) {
-    throwInvalidRegistryData(path)
-  }
-
-  return true
-}
-
-export const validateEip712Index = (
-  payload: unknown,
-  path: string
-): payload is Erc7730Eip712Index => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
-
-  const index = payload
-
-  Object.entries(index).forEach(([registryKey, primaryTypes]) => {
-    if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
-      throwInvalidRegistryData(path)
-    }
-
-    const primaryTypesIndex = primaryTypes
-
-    Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
-      if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
-        throwInvalidRegistryData(path)
-      }
-
-      const indexEntries = entries
-      indexEntries.forEach((entry) => validateEip712IndexEntry(entry, path))
-    })
-  })
-
-  return true
-}
-
-const validateDescriptorField = (field: unknown, path: string): field is Erc7730Field => {
-  if (!isPlainObject(field)) throwInvalidRegistryData(path)
+const validateDescriptorField = (field: unknown): field is Erc7730Field => {
+  if (!isPlainObject(field)) throwInvalidRegistryData()
 
   const descriptorField = field
 
   if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
-    throwInvalidRegistryData(path)
+    throwInvalidRegistryData()
   if (descriptorField.label !== undefined && typeof descriptorField.label !== 'string')
-    throwInvalidRegistryData(path)
+    throwInvalidRegistryData()
   if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
-    throwInvalidRegistryData(path)
+    throwInvalidRegistryData()
   }
 
   const { encryption } = descriptorField
   if (encryption !== undefined) {
-    if (!isPlainObject(encryption)) throwInvalidRegistryData(path)
+    if (!isPlainObject(encryption)) throwInvalidRegistryData()
     if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
-      throwInvalidRegistryData(path)
+      throwInvalidRegistryData()
   }
 
   const { fields } = descriptorField
   if (fields !== undefined) {
-    if (!Array.isArray(fields)) throwInvalidRegistryData(path)
+    if (!Array.isArray(fields)) throwInvalidRegistryData()
 
     const nestedFields = fields
-    nestedFields.forEach((nestedField) => validateDescriptorField(nestedField, path))
+    nestedFields.forEach((nestedField) => validateDescriptorField(nestedField))
   }
 
   return true
 }
 
-export const validateDescriptor = (
-  payload: unknown,
-  path: string
-): payload is Erc7730Descriptor => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData(path)
+/**
+ * The file name of the `$schema` a descriptor declares, which tells its version of ERC-7730, or
+ * null if it declares none. Only the file name is read, as descriptors link to the same schema
+ * through relative paths and through different URLs
+ */
+export const getSchemaFileName = (descriptor: unknown): string | null => {
+  if (!isPlainObject(descriptor) || typeof descriptor.$schema !== 'string') return null
+
+  return descriptor.$schema.split('/').pop() || null
+}
+
+export const validateDescriptor = (payload: unknown): payload is Erc7730Descriptor => {
+  if (!isPlainObject(payload)) throwInvalidRegistryData()
 
   const descriptor = payload
   const { includes } = descriptor
@@ -186,34 +112,34 @@ export const validateDescriptor = (
     (!Array.isArray(includes) ||
       includes.some((includePath: unknown) => typeof includePath !== 'string'))
   ) {
-    throwInvalidRegistryData(path)
+    throwInvalidRegistryData()
   }
 
   const { display } = descriptor
   if (display === undefined) return true
-  if (!isPlainObject(display)) throwInvalidRegistryData(path)
+  if (!isPlainObject(display)) throwInvalidRegistryData()
 
   const { formats, definitions } = display
-  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRegistryData(path)
+  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRegistryData()
   if (formats === undefined) return true
-  if (!isPlainObject(formats)) throwInvalidRegistryData(path)
+  if (!isPlainObject(formats)) throwInvalidRegistryData()
 
   const descriptorFormats = formats
 
   Object.values(descriptorFormats).forEach((format: unknown) => {
-    if (!isPlainObject(format)) throwInvalidRegistryData(path)
+    if (!isPlainObject(format)) throwInvalidRegistryData()
 
     const descriptorFormat = format
     if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
-      throwInvalidRegistryData(path)
+      throwInvalidRegistryData()
     }
 
     const { fields } = descriptorFormat
     if (fields === undefined) return
-    if (!Array.isArray(fields)) throwInvalidRegistryData(path)
+    if (!Array.isArray(fields)) throwInvalidRegistryData()
 
     const descriptorFields = fields
-    descriptorFields.forEach((field) => validateDescriptorField(field, path))
+    descriptorFields.forEach((field) => validateDescriptorField(field))
   })
 
   return true
@@ -382,17 +308,11 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
 }
 
 /**
- * The path of a descriptor with a leading slash, from a registry path, a path with a leading
- * slash or a URL (whose path is used), so that each descriptor has one key.
+ * The path of a descriptor with a leading slash, from a registry path with or without one, so that
+ * each descriptor has one key.
  */
-export const normalizeDescriptorPath = (pathOrUrl: string): string => {
-  try {
-    const url = new URL(pathOrUrl)
-    return `${url.pathname}${url.search}`
-  } catch {
-    return pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
-  }
-}
+export const normalizeDescriptorPath = (path: string): string =>
+  path.startsWith('/') ? path : `/${path}`
 
 /**
  * The path (with a leading slash) of the descriptor an `includes` entry points at, resolved
@@ -402,13 +322,10 @@ export const normalizeDescriptorPath = (pathOrUrl: string): string => {
  * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
  *
  * `scripts/updateErc7730Registry.js` resolves includes the same way to decide which files to
- * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other).
+ * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other). It
+ * also refuses an include that is a URL, as only files of the registry are bundled.
  */
 export const resolveIncludePath = (includePath: string, parentPath: string): string => {
-  if (includePath.startsWith('http://') || includePath.startsWith('https://')) {
-    return normalizeDescriptorPath(includePath)
-  }
-
   const parentFolderSegments = includePath.startsWith('/')
     ? []
     : normalizeDescriptorPath(parentPath).split('/').slice(0, -1)
@@ -717,7 +634,7 @@ const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: s
 
 /**
  * Merges a descriptor with everything its `includes` point at, collecting a want for any include
- * not yet fetched. Returns null while anything is still missing, so the caller reports its wants
+ * not looked up yet. Returns null while anything is still missing, so the caller reports its wants
  * and is asked again next round.
  */
 const mergeIncludes = (
@@ -1026,7 +943,7 @@ const resolveInnerCalls = (
   return resolved
 }
 
-/** What the controller still has to fetch before an accountOp can be fully described. */
+/** What the controller still has to look up before an accountOp can be fully described. */
 export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc7730Want[] =>
   accountOp.calls.flatMap(
     (call) =>
@@ -1035,7 +952,7 @@ export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc
       }).wants
   )
 
-/** The descriptor for each call that has one, given everything fetched so far. */
+/** The descriptor for each call that has one, given everything looked up so far. */
 export const resolveErc7730Descriptors = (
   accountOp: AccountOp,
   known: Erc7730Known
