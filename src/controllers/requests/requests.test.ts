@@ -2617,6 +2617,65 @@ describe('RequestsController ', () => {
       getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
     })
 
+    test('is not queued again once it got onchain, before the account state is refreshed', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl, AccountOpStatus.Success)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(0)
+    })
+
+    test('is not queued when a later transaction got onchain, before the account state is refreshed', async () => {
+      const { controller, activityCtrl, accountsCtrl } = await prepareSafeTest()
+      // The account state still has the nonce from before both transactions
+      accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = safeNonce - 1n
+      await addBroadcastOp(activityCtrl, AccountOpStatus.Success)
+
+      await buildSafeApiRequest(controller, {
+        calls: [{ ...call, value: 2n }],
+        nonce: safeNonce - 1n
+      })
+
+      expect(getCallsRequests(controller)).toHaveLength(0)
+    })
+
+    test('is not queued when another transaction on the same nonce got onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl, AccountOpStatus.Success)
+
+      await buildSafeApiRequest(controller, { calls: [{ ...call, value: 2n }] })
+
+      expect(getCallsRequests(controller)).toHaveLength(0)
+    })
+
+    test.each([
+      ['the transaction on its nonce failed', AccountOpStatus.Failure, safeNonce],
+      ['an earlier nonce got onchain', AccountOpStatus.Success, safeNonce + 1n]
+    ])('is still queued when %s', async (_, status, nonce) => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl, status)
+
+      await buildSafeApiRequest(controller, { nonce })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
+    test('is still queued when a transaction on another network got onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await activityCtrl.addAccountOp({
+        ...getActivityAccountOp(accountAddr, 10n, safeNonce),
+        calls: [{ ...call, id: 'call-id' }],
+        status: AccountOpStatus.Success
+      })
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
     test('is queued again once the broadcast did not get onchain', async () => {
       const { controller, activityCtrl } = await prepareSafeTest()
       await addBroadcastOp(activityCtrl, AccountOpStatus.BroadcastButStuck)

@@ -347,3 +347,105 @@ describe('conditional visibility rules', () => {
     ])
   })
 })
+describe('token tickers', () => {
+  const bridgeAbi = parseAbi(['function bridge(address token, uint256 amount)'])
+  const NATIVE_E_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+  const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+  const getDescriptor = (
+    fields: Erc7730Field[],
+    interpolatedIntent?: string
+  ): Erc7730Descriptor => ({
+    metadata: { constants: { nativeToken: ZERO_ADDRESS } },
+    display: {
+      formats: {
+        'bridge(address token,uint256 amount)': { intent: 'Bridge', interpolatedIntent, fields }
+      }
+    }
+  })
+
+  const humanizeBridge = (token: `0x${string}`, descriptor: Erc7730Descriptor) => {
+    const visualization = humanizeCallWithErc7730(
+      {
+        to: STEAK_USDC_VAULT,
+        value: 0n,
+        data: encodeFunctionData({ abi: bridgeAbi, args: [token, 5n] })
+      },
+      8453n as AccountOp['chainId'],
+      RECEIVER,
+      { descriptor }
+    )?.fullVisualization?.[0]
+
+    return visualization?.type === 'erc7730' ? visualization : undefined
+  }
+
+  test('shows a token address as the token alone, with no amount', () => {
+    const visualization = humanizeBridge(
+      USDC_ON_BASE,
+      getDescriptor([{ path: 'token', label: 'Token', format: 'tokenTicker' }])
+    )
+
+    expect(getErc7730RowValues(visualization!.fields![0]!)[0]).toMatchObject({
+      type: 'token',
+      address: USDC_ON_BASE.toLowerCase(),
+      value: 0n,
+      chainId: 8453n,
+      isTickerOnly: true
+    })
+  })
+
+  test('shows 0xEeee… as the native token, and uses the chain of the chainId parameter', () => {
+    const visualization = humanizeBridge(
+      NATIVE_E_ADDRESS,
+      getDescriptor([
+        { path: 'token', label: 'Token', format: 'tokenTicker', params: { chainId: 56 } }
+      ])
+    )
+
+    expect(getErc7730RowValues(visualization!.fields![0]!)[0]).toMatchObject({
+      type: 'token',
+      address: ZERO_ADDRESS,
+      chainId: 56n,
+      isTickerOnly: true
+    })
+  })
+
+  test("shows the network's native token from a constant of the descriptor in the intent", () => {
+    const visualization = humanizeBridge(
+      USDC_ON_BASE,
+      getDescriptor(
+        [
+          {
+            path: '$.metadata.constants.nativeToken',
+            label: 'Native token',
+            format: 'tokenTicker'
+          }
+        ],
+        'Wrap all {$.metadata.constants.nativeToken} held by the contract'
+      )
+    )
+
+    expect(visualization?.intent?.map(({ type }) => type)).toEqual(['action', 'token', 'text'])
+    expect(visualization?.intent?.[1]).toMatchObject({
+      type: 'token',
+      address: ZERO_ADDRESS,
+      chainId: 8453n,
+      value: 0n
+    })
+  })
+
+  test('does not show an interpolated intent whose ticker is not an address', () => {
+    const descriptor = getDescriptor(
+      [{ path: '$.metadata.constants.tokenName', label: 'Token', format: 'tokenTicker' }],
+      'Bridge {$.metadata.constants.tokenName}'
+    )
+    const visualization = humanizeBridge(USDC_ON_BASE, {
+      ...descriptor,
+      metadata: { constants: { tokenName: 'USDC' } }
+    })
+
+    // The plain intent is shown instead, and the value as text
+    expect(visualization?.intent).toEqual([expect.objectContaining({ content: 'Bridge' })])
+    expect(getErc7730RowValues(visualization!.fields![0]!)[0]).toMatchObject({ type: 'text' })
+  })
+})

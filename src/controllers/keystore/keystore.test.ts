@@ -2060,6 +2060,257 @@ describe('KeystoreController updateUnknownKeyDeviceModel', () => {
   })
 })
 
+describe('KeystoreController Lattice session', () => {
+  // Shaped like the gridplus-sdk client data: base64 of a JSON holding the pairing's key
+  const SESSION = Buffer.from(
+    JSON.stringify({
+      privKey: 'ab'.repeat(32),
+      deviceId: 'Ab12Cd',
+      name: 'Ambire Wallet (browser)'
+    })
+  ).toString('base64')
+  const NEWER_SESSION = Buffer.from(
+    JSON.stringify({
+      privKey: 'cd'.repeat(32),
+      deviceId: 'Ab12Cd',
+      name: 'Ambire Wallet (browser)'
+    })
+  ).toString('base64')
+
+  let storage: ReturnType<typeof produceMemoryStore>
+  let storageCtrl: StorageController
+  let keystoreCtrl: IKeystoreController
+
+  const createKeystore = () =>
+    new KeystoreController('default', storageCtrl, keystoreSigners, new UiController({ uiManager }))
+
+  const getStoredEntry = () => storage.get('keystoreLatticeSession', null)
+  /** The stored entry of a session the test has just saved */
+  const getSavedEntry = async () => {
+    const stored = await getStoredEntry()
+    if (!stored) throw new Error('No Lattice session is saved')
+    return stored
+  }
+
+  beforeEach(async () => {
+    storage = produceMemoryStore()
+    storageCtrl = new StorageController(storage)
+    keystoreCtrl = createKeystore()
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('returns null when no session is saved', async () => {
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBeNull()
+  })
+
+  test('returns the saved session', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBe(SESSION)
+  })
+
+  test('stores the session encrypted, never in plain text', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+
+    const stored = await getStoredEntry()
+    expect(stored).toEqual({
+      version: 1,
+      encrypted: { cipherType: 'AES-GCM', ciphertext: expect.any(String), iv: expect.any(String) }
+    })
+    expect(JSON.stringify(stored)).not.toContain(SESSION)
+    expect(JSON.stringify(stored)).not.toContain('ab'.repeat(32))
+  })
+
+  test('reads the session back after a restart', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+
+    const restartedKeystore = createKeystore()
+    await restartedKeystore.unlockWithSecret('password', pass)
+
+    await expect(restartedKeystore.getLatticeSession()).resolves.toBe(SESSION)
+  })
+
+  test('replaces the session saved before', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+    await keystoreCtrl.saveLatticeSession(NEWER_SESSION)
+
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBe(NEWER_SESSION)
+  })
+
+  test('applies saves in the order they were called, even when not awaited', async () => {
+    const firstSave = keystoreCtrl.saveLatticeSession(SESSION)
+    const secondSave = keystoreCtrl.saveLatticeSession(NEWER_SESSION)
+    await Promise.all([firstSave, secondSave])
+
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBe(NEWER_SESSION)
+    const restartedKeystore = createKeystore()
+    await restartedKeystore.unlockWithSecret('password', pass)
+    await expect(restartedKeystore.getLatticeSession()).resolves.toBe(NEWER_SESSION)
+  })
+
+  test('a read waits for a removal called before it', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+
+    const removal = keystoreCtrl.removeLatticeSession()
+    const read = keystoreCtrl.getLatticeSession()
+
+    await expect(read).resolves.toBeNull()
+    await removal
+  })
+
+  test('removes the session from memory and storage', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+    await keystoreCtrl.removeLatticeSession()
+
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBeNull()
+    await expect(getStoredEntry()).resolves.toBeNull()
+  })
+
+  test('refuses to save an empty session', async () => {
+    await expect(keystoreCtrl.saveLatticeSession('')).rejects.toThrow(
+      'keystore: no Lattice session to save'
+    )
+    await expect(getStoredEntry()).resolves.toBeNull()
+  })
+
+  describe('when locked', () => {
+    test('refuses to save, and a later save still works', async () => {
+      keystoreCtrl.lock()
+
+      await expect(keystoreCtrl.saveLatticeSession(SESSION)).rejects.toThrow(
+        'keystore: not unlocked'
+      )
+      await expect(getStoredEntry()).resolves.toBeNull()
+
+      await keystoreCtrl.unlockWithSecret('password', pass)
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      await expect(keystoreCtrl.getLatticeSession()).resolves.toBe(SESSION)
+    })
+
+    test('refuses to read', async () => {
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      keystoreCtrl.lock()
+
+      await expect(keystoreCtrl.getLatticeSession()).rejects.toThrow('keystore: not unlocked')
+      // Still saved, a locked keystore is no reason to forget the Lattice
+      await expect(getStoredEntry()).resolves.not.toBeNull()
+    })
+
+    test('can still remove the session', async () => {
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      keystoreCtrl.lock()
+
+      await keystoreCtrl.removeLatticeSession()
+
+      await expect(getStoredEntry()).resolves.toBeNull()
+    })
+  })
+
+  describe('a saved session this app cannot read', () => {
+    suppressConsoleBeforeEach()
+
+    const restartWithStoredEntry = async (entry: unknown) => {
+      await storage.set('keystoreLatticeSession', entry)
+      const restartedKeystore = createKeystore()
+      await restartedKeystore.unlockWithSecret('password', pass)
+      const emittedErrors: ErrorRef[] = []
+      restartedKeystore.onError((error) => emittedErrors.push(error))
+
+      return { restartedKeystore, emittedErrors }
+    }
+
+    test('is removed and reported without its contents when it was tampered with', async () => {
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      const stored = await getSavedEntry()
+      const lastChar = stored.encrypted.ciphertext.at(-1)
+      const tamperedCiphertext = `${stored.encrypted.ciphertext.slice(0, -1)}${lastChar === '0' ? '1' : '0'}`
+
+      const { restartedKeystore, emittedErrors } = await restartWithStoredEntry({
+        ...stored,
+        encrypted: { ...stored.encrypted, ciphertext: tamperedCiphertext }
+      })
+
+      await expect(restartedKeystore.getLatticeSession()).resolves.toBeNull()
+      await expect(getStoredEntry()).resolves.toBeNull()
+      expect(emittedErrors).toEqual([expect.objectContaining({ level: 'silent' })])
+      expect(emittedErrors[0]!.error.message).toBe(
+        'keystore: could not decrypt the saved Lattice session'
+      )
+    })
+
+    test('a session saved while it is being read is kept', async () => {
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      const stored = await getSavedEntry()
+      const { restartedKeystore } = await restartWithStoredEntry({
+        ...stored,
+        encrypted: { ...stored.encrypted, ciphertext: `${stored.encrypted.ciphertext}00` }
+      })
+
+      const read = restartedKeystore.getLatticeSession()
+      const save = restartedKeystore.saveLatticeSession(NEWER_SESSION)
+
+      await expect(read).resolves.toBeNull()
+      await save
+      await expect(restartedKeystore.getLatticeSession()).resolves.toBe(NEWER_SESSION)
+      await expect(getStoredEntry()).resolves.not.toBeNull()
+    })
+
+    test('is removed when it was saved in another format version', async () => {
+      await keystoreCtrl.saveLatticeSession(SESSION)
+      const stored = await getSavedEntry()
+
+      const { restartedKeystore, emittedErrors } = await restartWithStoredEntry({
+        ...stored,
+        version: 2
+      })
+
+      await expect(restartedKeystore.getLatticeSession()).resolves.toBeNull()
+      await expect(getStoredEntry()).resolves.toBeNull()
+      expect(emittedErrors[0]!.error.message).toBe(
+        'keystore: could not read the format of the saved Lattice session'
+      )
+    })
+
+    test('is removed when it is not encrypted', async () => {
+      const { restartedKeystore } = await restartWithStoredEntry({ version: 1, encrypted: SESSION })
+
+      await expect(restartedKeystore.getLatticeSession()).resolves.toBeNull()
+      await expect(getStoredEntry()).resolves.toBeNull()
+    })
+
+    test('is removed when it is malformed', async () => {
+      const { restartedKeystore } = await restartWithStoredEntry({
+        version: 1,
+        encrypted: { cipherType: 'AES-GCM', ciphertext: 42 }
+      })
+
+      await expect(restartedKeystore.getLatticeSession()).resolves.toBeNull()
+      await expect(getStoredEntry()).resolves.toBeNull()
+    })
+  })
+
+  test('stays readable after the password is changed', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+    await keystoreCtrl.changeKeystorePassword(`${pass}1`, pass)
+    keystoreCtrl.lock()
+
+    await keystoreCtrl.unlockWithSecret('password', `${pass}1`)
+
+    await expect(keystoreCtrl.getLatticeSession()).resolves.toBe(SESSION)
+  })
+
+  test('is not part of the app data sync', async () => {
+    await keystoreCtrl.saveLatticeSession(SESSION)
+    const stored = await getSavedEntry()
+
+    const exported = await keystoreCtrl.exportForSync([])
+
+    expect(JSON.stringify(exported)).not.toContain(stored.encrypted.ciphertext)
+    expect(JSON.stringify(exported)).not.toContain(SESSION)
+  })
+})
+
 describe('KeystoreController keys this device cannot sign with', () => {
   const latticeAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
   let storageCtrl: StorageController

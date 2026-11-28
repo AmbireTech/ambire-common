@@ -653,6 +653,19 @@ const formatFieldValue = (
     }
   }
 
+  // A token's ticker: its icon and symbol, with no amount. The zero address and 0xEeee… are the
+  // native token of the network, as in the other token formats
+  if (field.format === 'tokenTicker') {
+    const tokenAddress = typeof value === 'bigint' ? uintToAddress(value) : value
+    if (typeof tokenAddress === 'string' && isAddress(tokenAddress)) {
+      return [
+        getToken(eToNative(tokenAddress), 0n, getChainIdFromField(field, context, base), {
+          isTickerOnly: true
+        })
+      ]
+    }
+  }
+
   if (field.format === 'amount') {
     const amount = toBigIntOrNull(value)
     const tokenAddress = getTokenAddressFromField(field, context, base) || ZeroAddress
@@ -1127,7 +1140,9 @@ const interpolateIntentParts = (
     // An encrypted amount is formatted as its fallback text, never as a token
     if (
       !matchingField.encryption &&
-      (matchingField.format === 'amount' || matchingField.format === 'tokenAmount') &&
+      (matchingField.format === 'amount' ||
+        matchingField.format === 'tokenAmount' ||
+        matchingField.format === 'tokenTicker') &&
       !formattedValue.some((item) => item.type === 'token')
     ) {
       return null

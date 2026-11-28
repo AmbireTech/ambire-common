@@ -36,8 +36,7 @@ export interface ExternalSignerController {
   isUnlocked?: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock?: (
     path: ReturnType<typeof getHdPathFromTemplate>,
-    expectedKeyOnThisPath?: string,
-    shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
+    expectedKeyOnThisPath?: string
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath?: string
   unlockedPathKeyAddr?: string
@@ -52,7 +51,6 @@ export interface ExternalSignerController {
   isWebHID?: boolean // Ledger specific
   singerEth?: any // Ledger specific
   appName?: string // Lattice specific
-  creds?: any // Lattice specific
   network?: any // Lattice specific
   masterFingerprint?: string // Optional for some wallets, but can be used for additional info
   currentRequest?: QrRequest | null // Qr based specific
@@ -172,6 +170,17 @@ export type AESGCMEncrypted = {
 
 export type KeystoreEncryptedPayload = string | AESGCMEncrypted
 
+/**
+ * The saved session of a paired GridPlus Lattice1 (the gridplus-sdk client data), encrypted
+ * with the main key. It holds the key the Lattice was paired with, so it stays on this device:
+ * it is stored apart from the keys and seeds and never synced. `version` changes when the
+ * stored shape does, so an entry this app can't read is recognized and removed.
+ */
+export type StoredLatticeSession = {
+  version: number
+  encrypted: AESGCMEncrypted
+}
+
 export type MainKeyEncryptedWithSecret = {
   id: string
   scryptParams: ScryptParams
@@ -217,7 +226,12 @@ type ExternalKeyBase = {
 
 /** A key on a hardware wallet that derives it on a BIP-32 path (`hdPathTemplate` + `index`). */
 export type HdExternalKey = ExternalKeyBase & {
-  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
+  /**
+   * The maker (or the protocol, for `qr` and `nfc`), the model is in `meta.deviceModel`.
+   * `ambire` keys (the Ambire Ice) are signed for through the Trezor flows, as the Ambire Ice
+   * runs Trezor's firmware, but by their own device, so they're a type of their own
+   */
+  type: 'trezor' | 'ambire' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
   meta: {
     deviceId: string
     deviceModel: string
