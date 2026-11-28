@@ -17,7 +17,9 @@ import {
   getNetworksUpdatedWithRelayerNetworks,
   getSupportedNetworks,
   getStateOverrideSupport,
-  isNetworkInfoPending
+  getValidNetworks,
+  isNetworkInfoPending,
+  sanityCheckImportantNetworkProperties
 } from './networks'
 
 const getByKey = <T>(record: Record<string, T>, key: string): T => {
@@ -870,3 +872,37 @@ const mockRelayerNetworks = () => {
 
 const MOCK_RELAYER_NETWORKS = mockRelayerNetworks()
 const NEVER_MUTATE_NETWORKS_OBJ = structuredClone(networksObj)
+
+describe('Networks without a block explorer', () => {
+  const CUSTOM_CHAIN_ID = 4242423n
+  const { explorerUrl, ...networkWithoutExplorer } = predefinedNetworks[0]!
+  const customNetworkWithoutExplorer: Network = {
+    ...networkWithoutExplorer,
+    chainId: CUSTOM_CHAIN_ID,
+    name: 'Custom network without explorer',
+    predefined: false
+  }
+
+  test('pass the sanity check', () => {
+    // Guards the fixture: the predefined network must have had an explorer to remove
+    expect(explorerUrl).toBeTruthy()
+    expect(sanityCheckImportantNetworkProperties(customNetworkWithoutExplorer)).toBe(true)
+  })
+
+  test('fail the sanity check when the explorer URL is not a string', () => {
+    const networkWithNumberExplorer = {
+      ...customNetworkWithoutExplorer,
+      explorerUrl: 42
+    } as unknown as Network
+
+    expect(sanityCheckImportantNetworkProperties(networkWithNumberExplorer)).toBe(false)
+  })
+
+  test('are kept by getValidNetworks', () => {
+    const validNetworks = getValidNetworks({
+      [CUSTOM_CHAIN_ID.toString()]: customNetworkWithoutExplorer
+    })
+
+    expect(validNetworks[CUSTOM_CHAIN_ID.toString()]).toEqual(customNetworkWithoutExplorer)
+  })
+})

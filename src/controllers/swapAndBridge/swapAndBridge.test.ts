@@ -411,7 +411,8 @@ const transferCtrl = new TransferController(
   uiCtrl,
   erc7730Ctrl,
   contractInfoCtrl,
-  'browser-webkit'
+  'browser-webkit',
+  () => ({})
 )
 
 requestsCtrl = new RequestsController({

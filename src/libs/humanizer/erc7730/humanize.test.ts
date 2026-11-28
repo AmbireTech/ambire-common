@@ -347,7 +347,6 @@ describe('conditional visibility rules', () => {
     ])
   })
 })
-
 describe('token tickers', () => {
   const bridgeAbi = parseAbi(['function bridge(address token, uint256 amount)'])
   const NATIVE_E_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
