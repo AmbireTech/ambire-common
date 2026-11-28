@@ -62,7 +62,7 @@ describe('Erc7730Controller', () => {
     const controller = makeController(
       makeRegistry({
         descriptors: {
-          [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'common.json' },
+          [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: INCLUDED_PATH },
           [INCLUDED_PATH]: { metadata: { owner: 'Included owner' } }
         }
       })
@@ -72,6 +72,80 @@ describe('Erc7730Controller', () => {
 
     expect(descriptors[0]?.descriptor.metadata?.owner).toBe('Included owner')
     expect(descriptors[0]?.descriptor.display?.formats?.['test()']?.intent).toBe('Controller test')
+  })
+
+  describe('includes', () => {
+    /** A registry whose descriptor includes a chain of `levels` descriptors */
+    const withIncludeChain = (levels: number) => {
+      const descriptors: Erc7730Registry['descriptors'] = {
+        [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'registry/test/level-1.json' }
+      }
+      for (let level = 1; level <= levels; level += 1) {
+        descriptors[`registry/test/level-${level}.json`] =
+          level < levels
+            ? { includes: `registry/test/level-${level + 1}.json` }
+            : { metadata: { owner: 'Deepest include' } }
+      }
+      return makeRegistry({ descriptors })
+    }
+
+    test.each([5, 8])('merges a chain of %i includes', async (levels) => {
+      const controller = makeController(withIncludeChain(levels))
+
+      const descriptors = await controller.getDescriptorsForAccountOp(accountOp)
+
+      expect(descriptors[0]?.descriptor.metadata?.owner).toBe('Deepest include')
+      expect(descriptors[0]?.descriptor.display?.formats?.['test()']?.intent).toBe(
+        'Controller test'
+      )
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    test('merges includes that loop, each once', async () => {
+      const controller = makeController(
+        makeRegistry({
+          descriptors: {
+            [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: INCLUDED_PATH },
+            [INCLUDED_PATH]: { includes: REGISTRY_PATH, metadata: { owner: 'Included owner' } }
+          }
+        })
+      )
+
+      const descriptors = await controller.getDescriptorsForAccountOp(accountOp)
+
+      expect(descriptors[0]?.descriptor.metadata?.owner).toBe('Included owner')
+      expect(controller.emittedErrors).toEqual([])
+    })
+  })
+
+  test('describes a typed message with a format of an included descriptor', async () => {
+    const controller = makeController(
+      makeRegistry({
+        eip712Index: { [`eip155:1:${VERIFYING_CONTRACT}`]: [EIP712_PATH] },
+        descriptors: {
+          [EIP712_PATH]: { includes: INCLUDED_PATH },
+          [INCLUDED_PATH]: {
+            display: { formats: { 'Order(uint256 amount)': { intent: 'Place order', fields: [] } } }
+          }
+        }
+      })
+    )
+
+    const descriptor = await controller.getDescriptorForMessage({
+      content: {
+        kind: 'typedMessage',
+        types: { Order: [{ name: 'amount', type: 'uint256' }] },
+        domain: { chainId: 1, verifyingContract: VERIFYING_CONTRACT },
+        message: { amount: '1' },
+        primaryType: 'Order'
+      },
+      chainId: 1n
+    } as unknown as Message)
+
+    expect(descriptor?.path).toBe(EIP712_PATH)
+    expect(descriptor?.descriptor.display?.formats?.['Order(uint256 amount)']?.intent).toBe(
+      'Place order'
+    )
   })
 
   describe('versions of ERC-7730', () => {
@@ -130,7 +204,7 @@ describe('Erc7730Controller', () => {
       const { found, errors } = await describeCall({
         [REGISTRY_PATH]: {
           ...declaring('../../specs/erc7730-v2.schema.json'),
-          includes: 'common.json'
+          includes: INCLUDED_PATH
         },
         [INCLUDED_PATH]: { $schema: '../../specs/erc7730-v3.schema.json' }
       })
@@ -156,7 +230,7 @@ describe('Erc7730Controller', () => {
     ['is not an object', { [REGISTRY_PATH]: 'not a descriptor' }],
     [
       'includes a missing file',
-      { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'common.json' } }
+      { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: INCLUDED_PATH } }
     ]
   ])('does not name a descriptor that %s in the errors it reports', async (_, descriptors) => {
     const controller = makeController(makeRegistry({ descriptors }))
@@ -241,7 +315,7 @@ describe('Erc7730Controller', () => {
   test('does not take what an object inherits for an included descriptor', async () => {
     const controller = makeController(
       makeRegistry({
-        descriptors: { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: '/toString' } }
+        descriptors: { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'toString' } }
       })
     )
 
@@ -253,7 +327,7 @@ describe('Erc7730Controller', () => {
     const controller = makeController(
       makeRegistry({
         eip712Index: {
-          [`eip155:1:${VERIFYING_CONTRACT}`]: { Order: [{ path: EIP712_PATH }] }
+          [`eip155:1:${VERIFYING_CONTRACT}`]: [EIP712_PATH]
         },
         descriptors: {
           [EIP712_PATH]: {
@@ -383,6 +457,34 @@ describe('Erc7730Controller', () => {
       const { descriptors } = await resolveProxyCall(SAFE_PROXY_V1_4_1_RUNTIME_CODE, SAFE_SINGLETON)
 
       expect(descriptors[0]?.path).toBe(SAFE_PATH)
+    })
+
+    test('merges every include of the Safe singleton descriptor', async () => {
+      const descriptors: Erc7730Registry['descriptors'] = {
+        ...proxyRegistry.descriptors,
+        [SAFE_PATH]: {
+          display: { formats: { 'test()': { intent: 'Proxy test', fields: [] } } },
+          includes: 'registry/safe/level-1.json'
+        }
+      }
+      for (let level = 1; level <= 6; level += 1) {
+        descriptors[`registry/safe/level-${level}.json`] =
+          level < 6
+            ? { includes: `registry/safe/level-${level + 1}.json` }
+            : { metadata: { owner: 'Deepest include' } }
+      }
+      const controller = makeController(
+        { ...proxyRegistry, descriptors },
+        {
+          providers: { '1': makeProvider(SAFE_PROXY_V1_4_1_RUNTIME_CODE, SAFE_SINGLETON) },
+          initialLoadPromise: undefined
+        }
+      )
+
+      const found = await controller.getDescriptorsForAccountOp(proxyAccountOp)
+
+      expect(found[0]?.path).toBe(SAFE_PATH)
+      expect(found[0]?.descriptor.metadata?.owner).toBe('Deepest include')
     })
 
     test('reads a Safe proxy once for concurrent and later lookups', async () => {

@@ -136,24 +136,23 @@ export type Erc7730CallDescriptors = Record<number, Erc7730ResolvedDescriptor>
 
 export type Erc7730CalldataIndex = Record<string, string>
 
-export type Erc7730Eip712IndexEntry = {
-  path: string
-  encodeTypeHashes?: string[]
-}
-
-export type Erc7730Eip712Index = Record<string, Record<string, Erc7730Eip712IndexEntry[]>>
+/**
+ * `eip155:{chainId}:{verifyingContract}` -> the paths of the descriptors with typed message formats
+ * for the contract. The format for a message is found by its primary type and encoded type hash
+ */
+export type Erc7730Eip712Index = Record<string, string[]>
 
 export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
 /**
  * The ERC-7730 data descriptors are looked up in - the bundled one is `BUNDLED_ERC7730_REGISTRY`
- * (`consts/erc7730`). Paths are relative to the root of the registry, without a leading slash
- * (e.g. `registry/safe/calldata-Safe-1.4.1.json`).
+ * (`consts/erc7730`). Descriptors are known by their path in the upstream registry (e.g.
+ * `registry/safe/calldata-Safe-1.4.1.json`), and `includes` are written as such paths too.
  */
 export type Erc7730Registry = {
   /** `eip155:{chainId}:{address}` -> the path of the contract's descriptor */
   calldataIndex: Erc7730CalldataIndex
-  /** `eip155:{chainId}:{verifyingContract}` -> primary type -> the candidate descriptors */
+  /** `eip155:{chainId}:{verifyingContract}` -> the paths of the candidate descriptors */
   eip712Index: Erc7730Eip712Index
   /** The descriptors by their path, validated only when they are used */
   descriptors: Record<string, unknown>

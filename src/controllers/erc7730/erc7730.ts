@@ -14,16 +14,18 @@ import {
   SUPPORTED_ERC7730_SCHEMA_FILES
 } from '../../libs/humanizer/erc7730/consts'
 import {
+  getIncludes,
+  getSchemaFileName,
+  validateDescriptor
+} from '../../libs/humanizer/erc7730/descriptor'
+import {
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
-  getSchemaFileName,
-  normalizeDescriptorPath,
   planErc7730MessageWants,
   planErc7730Wants,
   resolveErc7730Descriptors,
   resolveErc7730MessageDescriptor,
-  selectEip712IndexEntry,
-  validateDescriptor
+  selectEip712DescriptorPath
 } from '../../libs/humanizer/erc7730/registry'
 import {
   EMPTY_ERC7730_KNOWN,
@@ -68,6 +70,9 @@ export class Erc7730Controller extends EventEmitter {
    */
   #descriptors = new Map<string, Erc7730Descriptor | null>()
 
+  /** The typed message formats of each descriptor looked up so far, with those of its includes */
+  #eip712Formats = new Map<string, string[]>()
+
   #safeSingletons = new Map<string, { singleton: string | null; readAt: number }>()
 
   #safeSingletonReads = new Map<string, Promise<string | null>>()
@@ -98,8 +103,8 @@ export class Erc7730Controller extends EventEmitter {
 
   /**
    * A descriptor by its path in the registry. Throws if it isn't there, is of a version of
-   * ERC-7730 the wallet doesn't support or isn't valid. The errors don't name the path: they are reported, and it would tell which contract the user was about
-   * to use
+   * ERC-7730 the wallet doesn't support or isn't valid. The errors don't name the path: they are
+   * reported, and it would tell which contract the user was about to use
    */
   #readDescriptor(registryPath: string): Erc7730Descriptor {
     const descriptor = getOwn(this.#registry.descriptors, registryPath)
@@ -120,13 +125,11 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   /**
-   * A descriptor by the path the registry wrote it with, validated the first time it is used, or
-   * null if it isn't in the registry, isn't of a supported version or isn't valid. That is reported only the first time, as the
-   * calls of an accountOp are humanized again on every update of it.
+   * A descriptor by its path in the registry, validated the first time it is used, or null if it
+   * isn't in the registry, isn't of a supported version or isn't valid. That is reported only the
+   * first time, as the calls of an accountOp are humanized again on every update of it.
    */
-  #getDescriptor(pathOrUrl: string): Erc7730Descriptor | null {
-    // Index entries are written without a leading slash, `includes` resolve to one
-    const registryPath = normalizeDescriptorPath(pathOrUrl).slice(1)
+  #getDescriptor(registryPath: string): Erc7730Descriptor | null {
     const lookedUpDescriptor = this.#descriptors.get(registryPath)
     if (lookedUpDescriptor !== undefined) return lookedUpDescriptor
 
@@ -266,7 +269,7 @@ export class Erc7730Controller extends EventEmitter {
     }
 
     if (want.kind === 'includedDescriptor') {
-      known.descriptorsByPath[want.path] = this.#getDescriptor(want.path)
+      this.#recordWithIncludes(want.path, this.#getDescriptor(want.path), known)
 
       return
     }
@@ -285,26 +288,65 @@ export class Erc7730Controller extends EventEmitter {
       }
 
       known.contractDescriptors[key] = { path }
-      known.descriptorsByPath[path] = descriptor
+      this.#recordWithIncludes(path, descriptor, known)
 
       return
     }
 
     const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
     const key = `${registryKey}:${want.primaryType}`
-    const entriesByPrimaryType = getOwn(this.#registry.eip712Index, registryKey)
-    const entries = entriesByPrimaryType && getOwn(entriesByPrimaryType, want.primaryType)
-    const entry = entries?.length ? selectEip712IndexEntry(entries, want.encodeTypeHash) : null
-    const descriptor = entry ? this.#getDescriptor(entry.path) : null
+    const candidates = (getOwn(this.#registry.eip712Index, registryKey) ?? []).map((path) => ({
+      path,
+      formats: this.#getEip712Formats(path)
+    }))
+    const path = selectEip712DescriptorPath(candidates, want.primaryType, want.encodeTypeHash)
+    const descriptor = path ? this.#getDescriptor(path) : null
 
-    if (!entry || !descriptor) {
+    if (!path || !descriptor) {
       known.eip712Descriptors[key] = null
 
       return
     }
 
-    known.eip712Descriptors[key] = { path: entry.path }
-    known.descriptorsByPath[entry.path] = descriptor
+    known.eip712Descriptors[key] = { path }
+    this.#recordWithIncludes(path, descriptor, known)
+  }
+
+  /**
+   * The typed message formats of a descriptor, with those of everything it includes: the index
+   * lists only the descriptors of a contract, and the format of a message is found among these.
+   * An include already on the chain being read is skipped, so includes that loop still end
+   */
+  #getEip712Formats(path: string, chain: ReadonlySet<string> = new Set()): string[] {
+    const cached = this.#eip712Formats.get(path)
+    if (cached) return cached
+
+    const descriptor = this.#getDescriptor(path)
+    if (!descriptor) return []
+
+    const nextChain = new Set(chain).add(path)
+    const formats = [
+      ...getIncludes(descriptor)
+        .filter((includePath) => !nextChain.has(includePath))
+        .flatMap((includePath) => this.#getEip712Formats(includePath, nextChain)),
+      ...Object.keys(descriptor.display?.formats ?? {})
+    ]
+    this.#eip712Formats.set(path, formats)
+
+    return formats
+  }
+
+  /**
+   * Records a descriptor and everything it includes, at any depth, in the same round: they are all
+   * in the bundled registry, so includes never cost a round. Each path is read once, so includes
+   * that loop still end
+   */
+  #recordWithIncludes(path: string, descriptor: Erc7730Descriptor | null, known: Erc7730Known) {
+    known.descriptorsByPath[path] = descriptor
+    getIncludes(descriptor ?? {}).forEach((includePath) => {
+      if (Object.prototype.hasOwnProperty.call(known.descriptorsByPath, includePath)) return
+      this.#recordWithIncludes(includePath, this.#getDescriptor(includePath), known)
+    })
   }
 
   /**

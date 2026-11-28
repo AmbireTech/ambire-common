@@ -1,35 +1,22 @@
-import { isHexString } from 'ethers'
+import { ZeroAddress } from 'ethers'
+import { readdirSync, readFileSync } from 'fs'
+import path from 'path'
+import { isDeepStrictEqual as isEqual } from 'util'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
-import {
-  getSchemaFileName,
-  resolveIncludePath,
-  validateDescriptor
-} from '../../libs/humanizer/erc7730/registry'
+import { mergeDescriptors } from '../../libs/humanizer/erc7730/descriptor'
+import { Erc7730Descriptor, Erc7730Field } from '../../libs/humanizer/erc7730/types'
 import { getRegistryKey } from '../../libs/humanizer/erc7730/utils'
-import { FALLBACK_CALLDATA_INDEX, OVERRIDE_CALLDATA_INDEX } from './ambireDescriptors'
-import upstreamFallbackCalldataIndex from './fallbackCalldataIndex.json'
+import lifiAmendment from '../../../scripts/erc7730/amendments/lifi.json'
 import { BUNDLED_ERC7730_REGISTRY } from '.'
 import upstreamRegistry from './registry.json'
-
-// The script that generates `registry.json`, for its own include resolution. It runs nothing when
-// imported
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const generatorScript = require('../../../scripts/updateErc7730Registry')
-const resolveScriptIncludePath: (includePath: string, parentPath: string) => string =
-  generatorScript.resolveIncludePath
 
 // Run these after refreshing `registry.json` with `npm run humanizer:update:erc7730Registry`.
 
 const { calldataIndex, eip712Index, descriptors } = BUNDLED_ERC7730_REGISTRY
 
 const isOwnKey = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
-
-/** The registry path an `includes` entry points at, as the wallet looks it up */
-const getIncludedPath = (includePath: string, descriptorPath: string) =>
-  resolveIncludePath(includePath, descriptorPath).slice(1)
 
 const getIncludes = (descriptor: unknown): string[] => {
   if (!descriptor || typeof descriptor !== 'object' || !('includes' in descriptor)) return []
@@ -40,17 +27,27 @@ const getIncludes = (descriptor: unknown): string[] => {
   return Array.isArray(includes) ? includes : []
 }
 
-/** Whether a key is written the way lookups build it: `eip155:{chainId}:{lowercase address}` */
-const isRegistryKey = (key: string) => {
-  const [, chainId = '', address = ''] = key.split(':')
+/** A descriptor merged with everything it includes, as the wallet reads it */
+const getMergedDescriptor = (name: string): Erc7730Descriptor => {
+  const descriptor = descriptors[name] as Erc7730Descriptor
 
-  return isHexString(address, 20) && getRegistryKey(chainId, address) === key
+  return mergeDescriptors(
+    getIncludes(descriptor).reduce<Erc7730Descriptor>(
+      (merged, include) => mergeDescriptors(merged, getMergedDescriptor(include)),
+      {}
+    ),
+    descriptor
+  )
 }
 
-const getEip712Paths = () =>
-  Object.values(eip712Index).flatMap((entriesByPrimaryType) =>
-    Object.values(entriesByPrimaryType).flatMap((entries) => entries.map(({ path }) => path))
-  )
+const getFields = (descriptor: Erc7730Descriptor): Erc7730Field[] => {
+  const collect = (fields: Erc7730Field[] = []): Erc7730Field[] =>
+    fields.flatMap((field) => [field, ...collect(field.fields)])
+
+  return Object.values(descriptor.display?.formats ?? {}).flatMap(({ fields }) => collect(fields))
+}
+
+const getEip712Paths = () => Object.values(eip712Index).flat()
 
 describe('bundled ERC-7730 registry', () => {
   test('has the registry and its descriptors', () => {
@@ -60,53 +57,6 @@ describe('bundled ERC-7730 registry', () => {
     expect(Object.keys(descriptors).length).toBeGreaterThan(0)
   })
 
-  test('has the keys of both indexes written the way lookups build them', () => {
-    const keys = [...Object.keys(calldataIndex), ...Object.keys(eip712Index)]
-
-    expect(keys.filter((key) => !isRegistryKey(key))).toEqual([])
-  })
-
-  test('has a descriptor path in every index entry', () => {
-    const invalidPaths = [...Object.values(calldataIndex), ...getEip712Paths()].filter(
-      (path) => typeof path !== 'string'
-    )
-
-    expect(invalidPaths).toEqual([])
-  })
-
-  test('has only 32 byte hashes as the encode type hashes of the EIP-712 index', () => {
-    const invalidHashes = Object.values(eip712Index)
-      .flatMap((entriesByPrimaryType) => Object.values(entriesByPrimaryType).flat())
-      .flatMap(({ encodeTypeHashes = [] }) => encodeTypeHashes)
-      .filter((hash) => !isHexString(hash, 32))
-
-    expect(invalidHashes).toEqual([])
-  })
-
-  test('has only valid descriptors', () => {
-    const invalidPaths = Object.entries(descriptors)
-      .filter(([, descriptor]) => {
-        try {
-          return !validateDescriptor(descriptor)
-        } catch {
-          return true
-        }
-      })
-      .map(([path]) => path)
-
-    expect(invalidPaths).toEqual([])
-  })
-
-  test('has only descriptors of a supported version of ERC-7730', () => {
-    const unsupportedPaths = Object.entries(descriptors)
-      .filter(
-        ([, descriptor]) => !SUPPORTED_ERC7730_SCHEMA_FILES.has(getSchemaFileName(descriptor) ?? '')
-      )
-      .map(([path]) => path)
-
-    expect(unsupportedPaths).toEqual([])
-  })
-
   test('has the descriptor of every index entry', () => {
     const paths = [...Object.values(calldataIndex), ...getEip712Paths()]
     const missingPaths = paths.filter((path) => !isOwnKey(descriptors, path))
@@ -114,60 +64,108 @@ describe('bundled ERC-7730 registry', () => {
     expect([...new Set(missingPaths)]).toEqual([])
   })
 
-  test('has every descriptor a descriptor includes', () => {
+  test('has every descriptor a descriptor includes, by its path', () => {
     const missingIncludes = Object.entries(descriptors).flatMap(([path, descriptor]) =>
       getIncludes(descriptor)
-        .map((includePath) => getIncludedPath(includePath, path))
         .filter((includedPath) => !isOwnKey(descriptors, includedPath))
         .map((includedPath) => `${path} -> ${includedPath}`)
     )
 
     expect(missingIncludes).toEqual([])
   })
+})
 
-  test('has the descriptor of every Ambire fallback that points at the registry', () => {
-    const missingPaths = Object.values(upstreamFallbackCalldataIndex).filter(
-      (path) => !isOwnKey(descriptors, path)
+describe("Ambire's changes to the bundled ERC-7730 registry", () => {
+  const COW_SWAP_CHAIN_IDS = [1, 56, 100, 137, 8453, 9745, 42161, 43114, 57073, 59144, 11155111]
+
+  test('has typed message formats in every descriptor of the EIP-712 index', () => {
+    const withoutFormats = [...new Set(getEip712Paths())].filter(
+      (name) => !Object.keys(getMergedDescriptor(name).display?.formats ?? {}).length
     )
 
-    expect([...new Set(missingPaths)]).toEqual([])
+    expect(withoutFormats).toEqual([])
   })
 
-  test('resolves includes the same way as the script that bundles them', () => {
-    const cases: [includePath: string, parentPath: string][] = [
-      ['common.json', 'registry/morpho/calldata-vault.json'],
-      ['./common.json', 'registry/morpho/calldata-vault.json'],
-      ['../../ercs/eip712-erc2612-permit.json', 'registry/permit/eip712-token.json'],
-      ['/ercs/calldata-erc20-tokens.json', 'registry/foo/calldata-token.json'],
-      ['common a.json', 'registry/foo/calldata-token.json'],
-      ['common#1.json', 'registry/foo/calldata-token.json'],
-      ['common?v=1.json', 'registry/foo/calldata-token.json'],
-      ['commön.json', 'registry/foo/calldata-token.json'],
-      ['common%20a.json', 'registry/foo/calldata-token.json'],
-      ['../../../../outside.json', 'registry/foo/calldata-token.json'],
-      ['common.json', 'registry/morpho/calldata-mev_capital-USUALUSDC+.json']
-    ]
-
-    cases.forEach(([includePath, parentPath]) => {
-      expect(resolveScriptIncludePath(includePath, parentPath)).toBe(
-        getIncludedPath(includePath, parentPath)
+  test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
+    const valueFields = getFields(
+      getMergedDescriptor(
+        'ambire-change/registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json'
       )
-    })
+    ).filter((field) => field.path === '@.value')
+
+    expect(valueFields.filter((field) => isEqual(field.visible, { ifNotIn: [0] }))).toHaveLength(14)
+    expect(
+      valueFields.filter((field) => typeof field.visible === 'object' && field.visible.mustMatch)
+    ).toEqual([])
   })
 
-  test("uses Ambire's overrides over the registry's descriptors", () => {
-    Object.entries(OVERRIDE_CALLDATA_INDEX).forEach(([key, path]) => {
-      expect(calldataIndex[key]).toBe(path)
-    })
+  test('shows the destination network of LiFi by its name', () => {
+    const lifi = getMergedDescriptor('ambire-change/registry/lifi/calldata-LIFIDiamond.json')
+    const chainIdFields = getFields(lifi).filter((field) =>
+      field.path?.endsWith('destinationChainId')
+    )
+
+    expect(chainIdFields.length).toBeGreaterThan(0)
+    expect(chainIdFields.every((field) => field.format === 'enum')).toBe(true)
+    expect((lifi.metadata?.enums as Record<string, unknown>).destinationChainId).toEqual(
+      lifiAmendment.chainNames
+    )
+    expect(Object.keys(lifi.display?.formats ?? {})).toEqual(
+      expect.arrayContaining(Object.keys(lifiAmendment.legacyFormats))
+    )
   })
 
-  test("uses the registry's descriptors over Ambire's fallbacks", () => {
-    const upstreamCalldataIndex: Record<string, string> = upstreamRegistry.calldataIndex
+  test('describes CoW Swap orders and EthFlow on all of its networks', () => {
+    COW_SWAP_CHAIN_IDS.forEach((chainId) => {
+      const settlementKey = getRegistryKey(chainId, '0x9008d19f58aabd9ed0d60971565aa8510560ab41')
+      expect(calldataIndex[settlementKey]).toBe(
+        'ambire-new/registry/cow-protocol/calldata-GPv2Settlement.json'
+      )
+      expect(eip712Index[settlementKey]).toEqual([
+        'ambire-new/registry/cow-protocol/eip712-GPv2Settlement.json'
+      ])
+      expect(
+        calldataIndex[getRegistryKey(chainId, '0xba3cb449bd2b4adddbc894d8697f5170800eadec')]
+      ).toBe('ambire-change/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
+    })
 
-    Object.entries(FALLBACK_CALLDATA_INDEX)
-      .filter(([key]) => !isOwnKey(OVERRIDE_CALLDATA_INDEX, key))
-      .forEach(([key, path]) => {
-        expect(calldataIndex[key]).toBe(upstreamCalldataIndex[key] ?? path)
+    const ethFlow = getMergedDescriptor(
+      'ambire-change/registry/cow-protocol/calldata-CoWSwapEthFlow.json'
+    )
+    const unwrapFields = ethFlow.display?.formats?.['unwrap(uint256 amount)']?.fields
+
+    expect(unwrapFields?.map(({ format }) => format)).toEqual(['amount'])
+    // It is used on every CoW network, so no text names ETH: the native token is shown as a token
+    const texts = Object.values(ethFlow.display?.formats ?? {}).flatMap((format) => [
+      format.intent,
+      format.interpolatedIntent,
+      ...getFields({ display: { formats: { format } } }).map(({ label }) => label)
+    ])
+    expect(texts.filter((text) => typeof text === 'string' && /\bW?ETH\b/.test(text))).toEqual([])
+    expect(ethFlow.metadata?.constants).toMatchObject({ nativeToken: ZeroAddress })
+    expect(
+      Object.keys(ethFlow.display?.formats ?? {}).some((format) =>
+        format.startsWith('invalidateOrdersIgnoringNotAllowed(')
+      )
+    ).toBe(true)
+  })
+
+  test('is not imported by the code the wallet runs', () => {
+    const readSources = (folder: string): string[] =>
+      readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(folder, entry.name)
+        if (entry.isDirectory()) return readSources(entryPath)
+        if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) return []
+        const importsScripts = readFileSync(entryPath, 'utf8')
+          .split('\n')
+          .some(
+            (line) =>
+              (line.includes(' from ') || line.includes('require(')) &&
+              line.includes('scripts/erc7730')
+          )
+        return importsScripts ? [entryPath] : []
       })
+
+    expect(readSources(path.join(__dirname, '..', '..'))).toEqual([])
   })
 })

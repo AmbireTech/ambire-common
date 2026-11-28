@@ -16,13 +16,13 @@ import { Call } from '../../accountOp/types'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../decodeCall'
 import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
-import { getEip712EncodeTypeHash } from './eip712'
+import { getEip712FormatPrimaryType, getIncludes, mergeDescriptors } from './descriptor'
+import { getEip712EncodeTypeHash, getEip712EncodeTypeHashFromString } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   Erc7730CallDescriptors,
   Erc7730Descriptor,
-  Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730Known,
   Erc7730Resolution,
@@ -30,12 +30,7 @@ import {
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
-import {
-  getRegistryKey,
-  getSafeSingletonKey,
-  getSafeTxCallsFromMessage,
-  isPlainObject
-} from './utils'
+import { getRegistryKey, getSafeSingletonKey, getSafeTxCallsFromMessage } from './utils'
 
 /** How deep `includes` chains and nested calls are followed before giving up. */
 export const ERC7730_MAX_RESOLUTION_DEPTH = 5
@@ -52,98 +47,6 @@ const ABI_WORD_HEX_LENGTH = 64
 const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
-
-/** The message names no descriptor, as these errors are reported outside of the device */
-function throwInvalidRegistryData(): never {
-  throw new Error('Invalid ERC-7730 registry data')
-}
-
-const validateDescriptorField = (field: unknown): field is Erc7730Field => {
-  if (!isPlainObject(field)) throwInvalidRegistryData()
-
-  const descriptorField = field
-
-  if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
-    throwInvalidRegistryData()
-  if (descriptorField.label !== undefined && typeof descriptorField.label !== 'string')
-    throwInvalidRegistryData()
-  if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
-    throwInvalidRegistryData()
-  }
-
-  const { encryption } = descriptorField
-  if (encryption !== undefined) {
-    if (!isPlainObject(encryption)) throwInvalidRegistryData()
-    if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
-      throwInvalidRegistryData()
-  }
-
-  const { fields } = descriptorField
-  if (fields !== undefined) {
-    if (!Array.isArray(fields)) throwInvalidRegistryData()
-
-    const nestedFields = fields
-    nestedFields.forEach((nestedField) => validateDescriptorField(nestedField))
-  }
-
-  return true
-}
-
-/**
- * The file name of the `$schema` a descriptor declares, which tells its version of ERC-7730, or
- * null if it declares none. Only the file name is read, as descriptors link to the same schema
- * through relative paths and through different URLs
- */
-export const getSchemaFileName = (descriptor: unknown): string | null => {
-  if (!isPlainObject(descriptor) || typeof descriptor.$schema !== 'string') return null
-
-  return descriptor.$schema.split('/').pop() || null
-}
-
-export const validateDescriptor = (payload: unknown): payload is Erc7730Descriptor => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData()
-
-  const descriptor = payload
-  const { includes } = descriptor
-
-  if (
-    includes !== undefined &&
-    typeof includes !== 'string' &&
-    (!Array.isArray(includes) ||
-      includes.some((includePath: unknown) => typeof includePath !== 'string'))
-  ) {
-    throwInvalidRegistryData()
-  }
-
-  const { display } = descriptor
-  if (display === undefined) return true
-  if (!isPlainObject(display)) throwInvalidRegistryData()
-
-  const { formats, definitions } = display
-  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRegistryData()
-  if (formats === undefined) return true
-  if (!isPlainObject(formats)) throwInvalidRegistryData()
-
-  const descriptorFormats = formats
-
-  Object.values(descriptorFormats).forEach((format: unknown) => {
-    if (!isPlainObject(format)) throwInvalidRegistryData()
-
-    const descriptorFormat = format
-    if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
-      throwInvalidRegistryData()
-    }
-
-    const { fields } = descriptorFormat
-    if (fields === undefined) return
-    if (!Array.isArray(fields)) throwInvalidRegistryData()
-
-    const descriptorFields = fields
-    descriptorFields.forEach((field) => validateDescriptorField(field))
-  })
-
-  return true
-}
 
 const getErc20ApproveDescriptor = (
   path: string,
@@ -305,62 +208,6 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
-
-/**
- * The path of a descriptor with a leading slash, from a registry path with or without one, so that
- * each descriptor has one key.
- */
-export const normalizeDescriptorPath = (path: string): string =>
-  path.startsWith('/') ? path : `/${path}`
-
-/**
- * The path (with a leading slash) of the descriptor an `includes` entry points at, resolved
- * against the path of the descriptor that includes it the way a file path is: `..` goes up a
- * folder and a leading `/` starts at the root of the registry. Resolved segment by segment rather
- * than with `URL`, which would percent-encode spaces and non-ASCII characters and cut the path at
- * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
- *
- * `scripts/updateErc7730Registry.js` resolves includes the same way to decide which files to
- * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other). It
- * also refuses an include that is a URL, as only files of the registry are bundled.
- */
-export const resolveIncludePath = (includePath: string, parentPath: string): string => {
-  const parentFolderSegments = includePath.startsWith('/')
-    ? []
-    : normalizeDescriptorPath(parentPath).split('/').slice(0, -1)
-  const segments = [...parentFolderSegments, ...includePath.split('/')].reduce<string[]>(
-    (resolved, segment) => {
-      if (segment === '' || segment === '.') return resolved
-      if (segment === '..') return resolved.slice(0, -1)
-
-      return [...resolved, segment]
-    },
-    []
-  )
-
-  return `/${segments.join('/')}`
-}
-
-const mergeDescriptors = (
-  base: Erc7730Descriptor,
-  override: Erc7730Descriptor
-): Erc7730Descriptor => {
-  const merge = (left: unknown, right: unknown): unknown => {
-    if (isPlainObject(left) && isPlainObject(right)) {
-      return Object.keys(right).reduce<Record<string, unknown>>(
-        (acc, key) => ({
-          ...acc,
-          [key]: merge(acc[key], right[key])
-        }),
-        { ...left }
-      )
-    }
-
-    return right === undefined ? left : right
-  }
-
-  return merge(base, override) as Erc7730Descriptor
 }
 
 const applyBuiltInFormatOverrides = (
@@ -610,40 +457,46 @@ export const getAddressFromStorageSlot = (slotValue: string): string | null => {
 }
 
 /**
- * Picks the index entry matching a typed message. Entries without `encodeTypeHashes` match
- * anything; otherwise the message's own hash has to be among them. A message whose hash could not
- * be computed falls back to the sole entry, when there is exactly one.
+ * Picks the descriptor of a typed message among the candidates the index lists for its contract:
+ * the one with a format for the message's primary type and encoded type hash. A message whose hash
+ * could not be computed falls back to the sole candidate with a format of its primary type.
  */
-export const selectEip712IndexEntry = (
-  entries: Erc7730Eip712IndexEntry[],
+export const selectEip712DescriptorPath = (
+  candidates: { path: string; formats: string[] }[],
+  primaryType: string,
   encodeTypeHash: string | null
-): Erc7730Eip712IndexEntry | null => {
-  if (!encodeTypeHash) return entries.length === 1 ? entries[0]! : null
-
-  return (
-    entries.find(
-      (entry) =>
-        !entry.encodeTypeHashes?.length ||
-        entry.encodeTypeHashes.some((hash) => hash.toLowerCase() === encodeTypeHash)
-    ) || null
+): string | null => {
+  const ofPrimaryType = candidates.filter(({ formats }) =>
+    formats.some((format) => getEip712FormatPrimaryType(format) === primaryType)
   )
+  if (!encodeTypeHash) return ofPrimaryType.length === 1 ? ofPrimaryType[0]!.path : null
+
+  const selected = ofPrimaryType.find(({ formats }) =>
+    formats.some((format) => getEip712EncodeTypeHashFromString(format) === encodeTypeHash)
+  )
+
+  return selected?.path ?? null
 }
 
 const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: string): string =>
   `${getRegistryKey(chainId, verifyingContract)}:${primaryType}`
 
 /**
- * Merges a descriptor with everything its `includes` point at, collecting a want for any include
- * not looked up yet. Returns null while anything is still missing, so the caller reports its wants
- * and is asked again next round.
+ * Merges a descriptor with everything its `includes` point at (by path, as the registry script
+ * writes them), at any depth, collecting a want for any include not looked up yet. Returns null
+ * while anything is still missing, so the caller reports its wants and is asked again next round.
+ * An include already on the chain being merged is skipped, so includes that loop still end
  */
 const mergeIncludes = (
   path: string,
   known: Erc7730Known,
   wants: Erc7730Want[],
-  depth = 0
+  chain: ReadonlySet<string> = new Set()
 ): Erc7730Descriptor | null => {
-  const descriptor = known.descriptorsByPath[path]
+  // An own property only: a name such as `toString` must not read what every object inherits
+  const descriptor = Object.prototype.hasOwnProperty.call(known.descriptorsByPath, path)
+    ? known.descriptorsByPath[path]
+    : undefined
   // undefined means not asked for yet; null means asked for and unavailable, so stop asking
   if (descriptor === undefined) {
     wants.push({ kind: 'includedDescriptor', path })
@@ -652,17 +505,14 @@ const mergeIncludes = (
   }
   if (!descriptor) return null
 
-  const includes = descriptor.includes
-    ? Array.isArray(descriptor.includes)
-      ? descriptor.includes
-      : [descriptor.includes]
-    : []
+  const includes = getIncludes(descriptor)
 
-  if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
+  if (!includes.length) return descriptor
 
-  const included = includes.map((includePath) =>
-    mergeIncludes(resolveIncludePath(includePath, path), known, wants, depth + 1)
-  )
+  const nextChain = new Set(chain).add(path)
+  const included = includes
+    .filter((includePath) => !nextChain.has(includePath))
+    .map((includePath) => mergeIncludes(includePath, known, wants, nextChain))
   if (included.some((one) => !one)) return null
 
   const mergedIncludes = included.reduce<Erc7730Descriptor>(

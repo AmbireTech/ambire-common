@@ -435,7 +435,7 @@ describe('SignMessageController', () => {
     const typedMessageToSign = createPermitTypedMessage()
     const registry: Erc7730Registry = {
       calldataIndex: {},
-      eip712Index: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+      eip712Index: { [`eip155:1:${usdc}`]: [registryPath] },
       descriptors: {
         [registryPath]: {
           display: {
@@ -512,7 +512,7 @@ describe('SignMessageController', () => {
     const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
     const registry: Erc7730Registry = {
       calldataIndex: {},
-      eip712Index: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+      eip712Index: { [`eip155:1:${usdc}`]: [registryPath] },
       descriptors: {
         [registryPath]: {
           display: {
@@ -611,16 +611,7 @@ describe('SignMessageController', () => {
     const registry: Erc7730Registry = {
       calldataIndex: {},
       eip712Index: {
-        [`eip155:10:${aggregationRouter}`]: {
-          Order: [
-            {
-              path: registryPath,
-              encodeTypeHashes: [
-                '0x3af21ec5a20011b88d3b7b4ed7c806cef05a5980cf34974bcd53566a131f7e4c'
-              ]
-            }
-          ]
-        }
+        [`eip155:10:${aggregationRouter}`]: [registryPath]
       },
       descriptors: {
         [registryPath]: {

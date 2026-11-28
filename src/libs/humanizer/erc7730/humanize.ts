@@ -41,7 +41,11 @@ import {
   getWarning,
   uintToAddress
 } from '../utils'
-import { MAX_DISPLAYED_NESTED_CALLDATA_DEPTH, SAFE_TX_PRIMARY_TYPE } from './consts'
+import {
+  getErc7730RegistryPath,
+  MAX_DISPLAYED_NESTED_CALLDATA_DEPTH,
+  SAFE_TX_PRIMARY_TYPE
+} from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -1193,8 +1197,18 @@ const formatToVisualizations = (
   ]
 }
 
+/**
+ * Whether a descriptor is one of 1inch's, by its path in the registry (`registry/1inch/...`), also
+ * when Ambire amended it (`ambire-change/registry/1inch/...`) or wrote it (`ambire-new/...`)
+ */
+const isOneInchDescriptor = (descriptorPath?: string) => {
+  if (!descriptorPath) return false
+
+  return getErc7730RegistryPath(descriptorPath).startsWith('registry/1inch/')
+}
+
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
-  !!descriptorPath?.includes('registry/1inch/') && formatKey.startsWith('fillOrder(')
+  isOneInchDescriptor(descriptorPath) && formatKey.startsWith('fillOrder(')
 
 const hasResolvableTokenReference = (field: Erc7730Field, context: FormatContext): boolean => {
   const resolvedField = resolveFieldReference(field, context)
@@ -1227,7 +1241,7 @@ const hideOneInchMinimumReceiveWithoutToken = (
   context: FormatContext,
   fullVisualization: HumanizerVisualization[]
 ): HumanizerVisualization[] => {
-  if (!context.descriptorPath?.includes('registry/1inch/')) return fullVisualization
+  if (!isOneInchDescriptor(context.descriptorPath)) return fullVisualization
 
   const minimumReceiveField = match.format.fields
     ?.map((field) => resolveFieldReference(field, context))
