@@ -15,6 +15,7 @@ import {
   getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
+  hasUserSelectedRpcUrl,
   getSupportedNetworks,
   getStateOverrideSupport,
   getValidNetworks,
@@ -415,6 +416,95 @@ describe('Networks lib', () => {
       expect(network999.chainId).toBe(999n)
       expect(network999.name).toBe('Custom Network')
       expect(network999.rpcUrls).toEqual(['https://custom-rpc.com'])
+    })
+    describe('the relayer never replaces an RPC the user picked', () => {
+      const USER_RPC_URL = 'https://user-picked-rpc.com'
+      const RELAYER_RPC_URL = 'https://new-relayer-rpc.com'
+
+      const getRelayerNetworksWithBumpedEthereum = () => {
+        const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
+        const relayerNetwork1 = getByKey(relayerNetworksClone, '1')
+        relayerNetwork1.predefinedConfigVersion = 4
+        relayerNetwork1.selectedRpcUrl = RELAYER_RPC_URL
+        relayerNetwork1.rpcUrls = [RELAYER_RPC_URL]
+
+        return relayerNetworksClone
+      }
+
+      it('a predefinedConfigVersion bump keeps the RPC the user picked', () => {
+        const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          MOCK_RELAYER_NETWORKS
+        )
+        getByKey(result1, '1').selectedRpcUrl = USER_RPC_URL
+
+        const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+          result1,
+          getRelayerNetworksWithBumpedEthereum()
+        )
+        const network1 = getByKey(result2, '1')
+
+        expect(network1.predefinedConfigVersion).toBe(4)
+        expect(network1.selectedRpcUrl).toBe(USER_RPC_URL)
+        expect(network1.rpcUrls).toContain(RELAYER_RPC_URL)
+      })
+      it('a predefinedConfigVersion bump switches the RPC if the user kept the suggested one', () => {
+        const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          MOCK_RELAYER_NETWORKS
+        )
+
+        const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+          result1,
+          getRelayerNetworksWithBumpedEthereum()
+        )
+
+        expect(getByKey(result2, '1').selectedRpcUrl).toBe(RELAYER_RPC_URL)
+      })
+      it('a suggested RPC change without a version bump does not mark the RPC in use as user-picked', () => {
+        const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          MOCK_RELAYER_NETWORKS
+        )
+        const rpcUrlInUse = getByKey(result1, '1').selectedRpcUrl
+
+        const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
+        getByKey(relayerNetworksClone, '1').selectedRpcUrl = RELAYER_RPC_URL
+        const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+          result1,
+          relayerNetworksClone
+        )
+        const network1 = getByKey(result2, '1')
+
+        expect(network1.selectedRpcUrl).toBe(rpcUrlInUse)
+        expect(hasUserSelectedRpcUrl(network1)).toBe(false)
+
+        const { mergedNetworks: result3 } = getNetworksUpdatedWithRelayerNetworks(
+          result2,
+          getRelayerNetworksWithBumpedEthereum()
+        )
+        expect(getByKey(result3, '1').selectedRpcUrl).toBe(RELAYER_RPC_URL)
+      })
+      it('the RPC of a custom network is kept when the relayer starts supporting it', () => {
+        const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
+        const relayerNetwork2 = getByKey(relayerNetworksClone, '2')
+        relayerNetwork2.predefinedConfigVersion = 1
+        relayerNetwork2.selectedRpcUrl = RELAYER_RPC_URL
+        const customNetwork: Network = {
+          ...network,
+          chainId: 2n,
+          rpcUrls: [USER_RPC_URL],
+          selectedRpcUrl: USER_RPC_URL,
+          predefined: false
+        }
+
+        const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+          { ...networksObj, '2': customNetwork },
+          relayerNetworksClone
+        )
+
+        expect(getByKey(result, '2').selectedRpcUrl).toBe(USER_RPC_URL)
+      })
     })
     it('networksObj reference should not be modified', () => {
       expect(NEVER_MUTATE_NETWORKS_OBJ).toEqual(networksObj)
